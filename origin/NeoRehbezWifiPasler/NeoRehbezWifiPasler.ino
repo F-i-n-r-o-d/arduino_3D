@@ -78,7 +78,7 @@ void loop(){
   for(int i=0;i<64;i++)
   {
     if(i==hodnota) np.neoPixelSetValue((uint8_t)i,120,0,0,true); // když se daný index rovná indexu vypočítanému z náklonu, daná dioda se vykreslí červeně
-    else if(i>=randNumber && i< randNumber+10) np.neoPixelSetValue((uint8_t)i,20,20,0,true); // rozsah o velikosti 10 daný náhodným číslem  se vykreslí zeleně
+    else if(i>=randNumber && i< randNumber+10) np.neoPixelSetValue((uint8_t)i,0,20,0,true); // rozsah o velikosti 10 daný náhodným číslem  se vykreslí zeleně
     else np.neoPixelSetValue((uint8_t)i,0,0,20,true); // zbytek modře
   }
  
