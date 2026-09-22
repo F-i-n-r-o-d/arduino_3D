@@ -31,7 +31,7 @@ void setup(){
 
   Serial.print("Accelerometer sample rate = ");
   Serial.print(IMU.accelerationSampleRate());
-  Serial.println("Hz");
+  Serial.printIn("Hz");
   Serial.println();
 
  
