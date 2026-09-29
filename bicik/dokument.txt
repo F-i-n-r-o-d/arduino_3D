@@ -1,0 +1,3 @@
+Cilove pole se bude hybat
+-ze zacatku se cilove pole nebude hybat vubec a v dalsich levelech se zacne plynule
+pohybovat a zrychlovat + na konci vybehne vystup pocitace jak si uzivatel vedl
