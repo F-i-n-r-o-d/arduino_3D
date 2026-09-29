@@ -1,0 +1,4 @@
+Cilove pole se bude hybat
+-ze zacatku se cilove pole nebude hybat vubec a v dalsich levelech se zacne plynule
+pohybovat a zrychlovat + v prubehu hry bude pocitac vypisovat jak se uzivatelovi dari,
+na konci vyskoci konecne skore a celkovy cas.
