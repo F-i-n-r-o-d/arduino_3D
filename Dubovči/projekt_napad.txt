@@ -1,4 +1,4 @@
-
+# Webová hra s Arduinem
 
 Vytvoříš jednu webovou stránku, která se přes USB připojí k Arduinu. Stránka bude zobrazovat skóre, přehrávat zvuky a hlásit vítěze. Nic nového nepotřebuješ – jen Arduino, počítač nebo telefon a USB kabel.
 
@@ -10,4 +10,4 @@ Při každé správné trefě se ozve zvuk. Čím vyšší level, tím výrazně
 
 Stránka si pamatuje nejvyšší skóre i po zavření. Když ho překonáš, ozve se zvláštní zvuk a objeví se „Nový rekord!".
 
-...
+Jedna webová stránka, tři režimy, skóre obou hráčů, zvuky při trefě a tabulka rekordů. Vše běží v prohlížeči, nic nového nepotřebuješ.
