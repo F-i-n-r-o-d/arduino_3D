@@ -10,3 +10,4 @@ Při každé správné trefě se ozve zvuk. Čím vyšší level, tím výrazně
 
 Stránka si pamatuje nejvyšší skóre i po zavření. Když ho překonáš, ozve se zvláštní zvuk a objeví se „Nový rekord!".
 
+...
