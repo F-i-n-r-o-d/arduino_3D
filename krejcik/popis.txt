@@ -1,0 +1,6 @@
+tyč bude používat svůj software pro balancování jako základ
+- po nkrátém úspěšném vybalancování tyče se na jednom okraji zbarví světla do výrazně odlišné barvy
+- pokud hráč nakloní tyč, aby do okraje kulička sjela, barva všech světel se změní a hráč vstoupí do nové "těžší úrovně"
+- pozadí, kulička a pole dostanou nové barvy a pole se stane menším
+- po nkrátém úspěšném vybalancování tyče se na obou krajích zbarví světla do výrazně odlišných barev, jedna vede do "předchozí úrovně" a druha do "následující"
+- "úrovně" jsou celkem 4
