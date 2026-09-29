@@ -1,0 +1,4 @@
+* Po stisknutí tlačítka se začne měřit čas.
+* Hráč musí kuličku dostat přes několik kontrolních bodů až do cíle.
+* Arduino na konci zobrazí výsledný čas a porovná ho s nejlepším dosaženým časem.
+* Při dalším pokusu se časování znovu spustí a hráč se snaží svůj předchozí výsledek pře
