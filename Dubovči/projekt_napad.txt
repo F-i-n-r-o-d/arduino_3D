@@ -1,0 +1,12 @@
+
+
+Vytvoříš jednu webovou stránku, která se přes USB připojí k Arduinu. Stránka bude zobrazovat skóre, přehrávat zvuky a hlásit vítěze. Nic nového nepotřebuješ – jen Arduino, počítač nebo telefon a USB kabel.
+
+Na stránce si vybereš jeden ze tří režimů. Sólo – hraješ sám proti sobě a snažíš se překonat svůj rekord. Proti sobě – dva hráči soutěží, kdo má víc bodů. Spolu – dva hráči spolupracují a jejich body se sčítají.
+
+Uprostřed stránky jsou dvě kolonky – pro hráče 1 a hráče 2. Každá ukazuje skóre, čas a level. Dole je tabulka rekordů a stavový řádek, který hlásí, co se právě děje.
+
+Při každé správné trefě se ozve zvuk. Čím vyšší level, tím výraznější zvuk. Na konci hry zahraje fanfára a hlas česky řekne, kdo vyhrál.
+
+Stránka si pamatuje nejvyšší skóre i po zavření. Když ho překonáš, ozve se zvláštní zvuk a objeví se „Nový rekord!".
+
