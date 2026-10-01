@@ -1,0 +1,3 @@
+
+Za náhodný čas (např. 0,5 - 1,5 sekund, může se postupně snižovat) se kulička pohne náhodně doleva nebo doprava
+Hra se jinak bude chovat stejně, je to stížení (kulička uskakuje)
