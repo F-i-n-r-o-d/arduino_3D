@@ -2,3 +2,10 @@ Cilove pole se bude hybat
 -ze zacatku se cilove pole nebude hybat vubec a v dalsich levelech se zacne plynule
 pohybovat a zrychlovat + v prubehu hry bude pocitac vypisovat jak se uzivatelovi dari,
 na konci vyskoci konecne skore a celkovy cas.
+
+
+Level 1: cílové pole stojí. Od levelu 2 se plynule pohybuje a odráží se od krajů pásku. Rychlost je 0 → 3 → 6 → 10 → 15 LED/s a upravíš ji v poli LEVEL_SPEED.
+Postup: v každém levelu je potřeba splnit 3 cíle (GOALS_PER_LEVEL) a držet se v cíli 0,8 s (HOLD_MS). Po 5 levelech hra končí.
+Průběžný výpis: každou sekundu se do Serial monitoru i na webovou stránku vypíše level, splněné cíle, skóre, čas, přesnost a hodnocení („Skvěle / Dobře / Zkus se víc soustředit").
+Konec hry: na stránce vyskočí okno s konečným skóre, celkovým časem a přesností. Tlačítko „Hrát znovu" hru restartuje. Na pásku se na konci rozsvítí vše zeleně.
+Skóre: body za cíl jsou (100 − 3 × sekundy) × level, minimálně 20 × level. Čím rychleji cíl splníš a čím vyšší je level, tím víc bodů dostaneš.
