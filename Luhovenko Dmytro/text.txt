@@ -1,1 +1,8 @@
+
+Smart Balance Labyrinth
+
+1. Ovládání: Držíš v ruce tyč s čidlem náklonu (akcelerometrem) a LED páską. Nakláněním tyče ovládáš pohyb červené „kuličky“ na pásce, která se chová jako skutečná s fyzikou (má setrvačnost a odráží se od konců).
+2. Cíl hry: Tvým úkolem je dostat kuličku do žluté cílové zóny a udržet ji tam.
+3. Postup a obtížnost: Jakmile udržíš rovnováhu, postupuješ do dalších úrovní. S každým levelem se cílová zóna zmenšuje a otevírají se nové části pásky.
+4. Webové rozhraní: Zařízení vysílá vlastní Wi-Fi, takže si můžeš na mobilu nebo počítači v reálném čase prohlížet grafické rozhraní a aktuální stav hry.
 123
