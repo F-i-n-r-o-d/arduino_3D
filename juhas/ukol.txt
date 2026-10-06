@@ -1,0 +1,10 @@
+Varianta A: Tlaková vlna / Odraz (Odfouknutí zpět)
+Jak hraje první dítě: Drží lištu v ruce a naklápí ji (přes akcelerometr/gyroskop, např. MPU6050, nebo pásek snímá náklon) a snaží se gravitací dokutálet světelnou kuličku na druhý konec do zeleného „domečku“.
+
+Jak brání druhé dítě klávesou:
+
+Kdykoliv stiskne klávesu (např. MEZERNÍK), vyšle z domečku proti kuličce červenou rázovou vlnu / pulz.
+
+Jakmile vlna kuličku zasáhne, odhodí ji o kus zpátky k začátku (nebo obrátí její setrvačnost).
+
+Pravidlo pro balanc: Obránce nemůže mezerník spamovat – má třeba 2sekundový cooldown (dobíjení energie, které může indikovat jiná barva na displeji nebo na kraji pásku). První dítě tak musí vystihnout moment těsně po odrazu a rychle kuličku dotlačit náklonem do cíle.
