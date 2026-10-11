@@ -1,0 +1,1 @@
+přidat k LED pohybu efekt odrazu, jehož rychlost se mění podle rychlosti pohybu tyče. Při pomalém pohybu se světelný bod pohybuje pomalu, při rychlém pohybu rychleji a při změně směru se „odrazí“. Uživatel tak musí kromě správné polohy kontrolovat i rychlost a plynulost pohybu, což může přidat další prvek rehabilitačního cvičení

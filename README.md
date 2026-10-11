@@ -12,4 +12,4 @@ Výběr desky:
 
 V horní liště vyberte z nabídky desek: Arduino Nano RP2040 Connect.
 
-K tomu přiřaďte příslušný COM port (např. COM3).
+K tomu přiřaďte příslušný COM port (např. COM3).......
