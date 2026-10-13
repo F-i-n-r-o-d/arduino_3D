@@ -1,30 +1,97 @@
-#include <NeoPixelConnect.h> // knihovna pro led pásku
-#include <Arduino_LSM6DSOX.h> // knihovna pro čtení náklonu
+#include <NeoPixelConnect.h>   // knihovna pro LED pásku
+#include <Arduino_LSM6DSOX.h>  // knihovna pro čtení náklonu
 #include <SPI.h>
 
-#define MAXIMUM_NUM_NEOPIXELS 64 // Nastavení délky pásku na 64 diod
+#define MAXIMUM_NUM_NEOPIXELS 64   // délka pásku
+#define SIRKA_CILE            10   // šířka cílové zóny (počet LED)
+#define CILU_NA_LEVEL          3   // kolikrát musíme trefit cíl, než postoupíme do dalšího levelu
+#define DOBA_V_CILI         5000UL // jak dlouho (ms) musí kulička vydržet v cíli
+#define POCET_LEVELU           6   // počet levelů (poslední = červený = finální)
+
+NeoPixelConnect np(4, MAXIMUM_NUM_NEOPIXELS, pio0, 0); // pásek na pinu D4
+
+// Barva pozadí pro každý level: od klidné modré přes světlejší modré až po červenou
+// (hodnoty R, G, B – nízký jas, ať to nesvítí do očí)
+const uint8_t barvyPozadi[POCET_LEVELU][3] = {
+  {  0,  0, 30 },  // level 1 – modrá (klid)
+  {  0, 10, 30 },  // level 2 – světlejší modrá
+  {  0, 22, 30 },  // level 3 – světle modrá / azurová
+  { 20,  0, 25 },  // level 4 – fialová (přechod do teplých barev)
+  { 30, 10,  0 },  // level 5 – oranžová
+  { 30,  0,  0 }   // level 6 – červená (finální level)
+};
+
+// Náchylnost kuličky k náklonu: čím menší rozsah, tím menší náklon stačí
+// k přejetí přes celý pásek => kulička je citlivější a "rychlejší"
+// (hodnoty v g: 0.5 g ≈ 30°, 0.16 g ≈ 9°)
+const float rozsahNaklonu[POCET_LEVELU] = { 0.50, 0.42, 0.35, 0.28, 0.22, 0.16 };
+
+int level = 0;               // aktuální level (0 = první)
+int splnenoCilu = 0;         // kolik cílů jsme v tomto levelu už splnili
+int randNumber;              // začátek cílové zóny
+bool vCili = false;          // je kulička právě v cíli?
+unsigned long casVstupu = 0; // kdy kulička do cíle vjela (millis)
+float x, y, z;               // hodnoty zrychlení/náklonu
 
 
-NeoPixelConnect np(4, MAXIMUM_NUM_NEOPIXELS, pio0, 0); // Inicializace pásku na digitálním pinu D4
-int i;
-int randNumber;
-int citac = 0; // Počítadlo času stráveného v cíli
-float x, y, z; // Proměnné pro ukládání hodnot zrychlení/náklonu
-char ssid[] = "RP2040";        // your network SSID (name)
-char pass[] = "ArduinoWeb";    // your network password (use for WPA, or use as key for WEP)
-int keyIndex = 0;              // your network key index number (needed only for WEP)
+// převodník intervalu z in_min až in_max na out_min až out_max
+int mapFloat(float x, float in_min, float in_max, int out_min, int out_max) {
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
+// vygeneruje novou pozici cíle tak, aby kulička nestála hned v něm
+void novyCil(int hodnota) {
+  do {
+    randNumber = random(0, MAXIMUM_NUM_NEOPIXELS - SIRKA_CILE + 1); // 0 až 54
+  } while (hodnota >= randNumber - 5 && hodnota < randNumber + SIRKA_CILE + 5);
+}
+
+// konec hry – celý pásek bliká zeleně
+void konecHry() {
+  Serial.println("HOTOVO! Vsechny levely splneny.");
+  while (true) {
+    np.neoPixelFill(0, 60, 0, true);
+    delay(400);
+    np.neoPixelClear(true);
+    delay(400);
+  }
+}
+
+// zavolá se, když kulička vydrží v cíli požadovanou dobu
+void cilSplnen(int hodnota) {
+  vCili = false;
+  splnenoCilu++;
+  Serial.print("Cil splnen: ");
+  Serial.print(splnenoCilu);
+  Serial.print("/");
+  Serial.println(CILU_NA_LEVEL);
+
+  if (splnenoCilu >= CILU_NA_LEVEL) {
+    splnenoCilu = 0;
+
+    if (level == POCET_LEVELU - 1) {
+      konecHry(); // dokončen červený (finální) level
+    }
+
+    level++;
+    Serial.print("Postup do levelu ");
+    Serial.println(level + 1);
+
+    // krátce ukážeme novou barvu levelu přes celý pásek
+    np.neoPixelFill(barvyPozadi[level][0], barvyPozadi[level][1], barvyPozadi[level][2], true);
+    delay(1000);
+  }
+
+  novyCil(hodnota); // cíl se přesune jinam
+}
 
 
-
-
-
-void setup(){
-
-  Serial.begin(115200); // linka pro PC konzoli
+void setup() {
+  Serial.begin(115200);
   delay(2000);
   Serial.println("In setup");
-  i = 0;
-  if (!IMU.begin()) { // Inicializuje vestavěný akcelerometr LSM6DSOX. Pokud selže, program se zastaví v nekonečné smyčce
+
+  if (!IMU.begin()) { // když se akcelerometr nespustí, program se zastaví
     Serial.println("Failed to initialize IMU!");
     while (1);
   }
@@ -32,84 +99,49 @@ void setup(){
   Serial.print("Accelerometer sample rate = ");
   Serial.print(IMU.accelerationSampleRate());
   Serial.println("Hz");
-  Serial.println();
 
- 
-  randNumber = random(0, 49); // Vygeneruje první náhodnou pozici cíle (od LED 0 do max 48, aby se zóna o šířce 10 LED vešla do rozsahu 64)
-
-  // wait 10 seconds for connection:
-  delay(1000);
-
-  
+  randomSeed(analogRead(A0)); // aby byly pozice cíle při každém spuštění jiné
+  novyCil(MAXIMUM_NUM_NEOPIXELS / 2);
 }
 
-void loop(){
 
-    // set all LEDs to red, then green, and then blue
-    //np.neoPixelFill(255, 0, 0, true);
-    //delay(1000);
-    //np.neoPixelClear(true);
-    //delay(1000);
-
-  
-  //np.neoPixelSetValue(1,0,200,0,true);
-  //np.neoPixelSetValue(2,200,200,0,true);
-  //np.neoPixelSetValue(3,0,0,200,true);
-  //np.neoPixelSetValue(4,200,0,200,true);
-
-  
+void loop() {
   if (IMU.accelerationAvailable()) {
     IMU.readAcceleration(x, y, z); // načte aktuální náklon
-
-    //Serial.println("Accelerometer data: ");
-    //Serial.print(Ax);
-    //Serial.println();
   }
 
-  int hodnota = mapFloat(x, -0.5, 0.5, 0, 63); // převede náklon v ose X (rozsah -0.5 g až +0.5 g) na index diody (0 až 63) => vrátí index v rozsahu 0-63 pro daný náklon x, odpovídá - 30 stupňů až +30 stupňů náklonu
+  // převod náklonu na index diody – rozsah závisí na levelu (náchylnost)
+  float r = rozsahNaklonu[level];
+  int hodnota = mapFloat(x, -r, r, 0, MAXIMUM_NUM_NEOPIXELS - 1);
 
-   //np.neoPixelClear();
-   
-   // náklon mimo rozsah bude igorovat a setovat na maximální resp. minimální
-  if(hodnota > 63) hodnota = 63;
-  if(hodnota < 0) hodnota = 0;
+  // náklon mimo rozsah se ořízne na kraj pásku
+  if (hodnota > MAXIMUM_NUM_NEOPIXELS - 1) hodnota = MAXIMUM_NUM_NEOPIXELS - 1;
+  if (hodnota < 0) hodnota = 0;
 
-//projde všechny diody v pásku
-  for(int i=0;i<64;i++)
-  {
-    if(i==hodnota) np.neoPixelSetValue((uint8_t)i,120,0,0,true); // když se daný index rovná indexu vypočítanému z náklonu, daná dioda se vykreslí červeně
-    else if(i>=randNumber && i< randNumber+10) np.neoPixelSetValue((uint8_t)i,0,20,0,true); // rozsah o velikosti 10 daný náhodným číslem  se vykreslí zeleně
-    else np.neoPixelSetValue((uint8_t)i,0,0,20,true); // zbytek modře
+  // vykreslení – hodnoty se jen nastaví (false) a pošlou na pásek najednou na konci
+  for (int i = 0; i < MAXIMUM_NUM_NEOPIXELS; i++) {
+    if (i == hodnota)
+      np.neoPixelSetValue((uint8_t)i, 80, 80, 80, false);  // kulička bíle (na červeném pozadí by červená nebyla vidět)
+    else if (i >= randNumber && i < randNumber + SIRKA_CILE)
+      np.neoPixelSetValue((uint8_t)i, 0, 30, 0, false);    // cíl zeleně
+    else
+      np.neoPixelSetValue((uint8_t)i, barvyPozadi[level][0], barvyPozadi[level][1], barvyPozadi[level][2], false); // pozadí podle levelu
   }
- 
-  if(hodnota>=randNumber && hodnota< randNumber+10){
-citac++; // pokud je při tomto průchodu cyklem kulička v daném rozsahu, přičtě se hodnota čítače
+  np.neoPixelShow();
+
+  // měření času v cíli pomocí millis() (přesné, nezávisí na rychlosti smyčky)
+  bool kulickaVCili = (hodnota >= randNumber && hodnota < randNumber + SIRKA_CILE);
+
+  if (kulickaVCili) {
+    if (!vCili) {
+      vCili = true;
+      casVstupu = millis();
+    } else if (millis() - casVstupu >= DOBA_V_CILI) {
+      cilSplnen(hodnota);
+    }
   } else {
-    citac = 0;
+    vCili = false; // kulička vyjela z cíle => čas se nuluje
   }
-
-  if(citac>50) { // splnění úkolu: 25 * delay 10ms => 2,5s
-    randNumber = random(0, 49); // vygenerování nového rozsahu
-    citac = 0; // vynulování čítače
-  }
-
-  //i++;
-  //if(i == 24)
-  //{
-  //  i = 0;
-  //  np.neoPixelClear();
-  //}
-
-  
- 
 
   delay(10);
-   
 }
-
-
-// převodník intervalu z in_min až in_max na out_min až out_max
-int mapFloat(float x, float in_min, float in_max, int out_min, int out_max) { 
-  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-}
-
