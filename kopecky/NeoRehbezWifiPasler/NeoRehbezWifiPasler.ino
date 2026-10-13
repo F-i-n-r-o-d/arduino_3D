@@ -15,7 +15,9 @@ char pass[] = "ArduinoWeb";    // your network password (use for WPA, or use as 
 int keyIndex = 0;              // your network key index number (needed only for WEP)
 
 
-
+const unsigned long INTERVAL_ODSKOKU = 5000; // výchozí X = 5 sekund
+unsigned long posledniOdskok = 0;
+int posunOdskoku = 0;
 
 
 void setup(){
@@ -36,6 +38,8 @@ void setup(){
 
  
   randNumber = random(0, 49); // Vygeneruje první náhodnou pozici cíle (od LED 0 do max 48, aby se zóna o šířce 10 LED vešla do rozsahu 64)
+  posledniOdskok = millis();
+
 
   // wait 10 seconds for connection:
   delay(1000);
@@ -66,13 +70,29 @@ void loop(){
     //Serial.println();
   }
 
-  int hodnota = mapFloat(x, -0.5, 0.5, 0, 63); // převede náklon v ose X (rozsah -0.5 g až +0.5 g) na index diody (0 až 63) => vrátí index v rozsahu 0-63 pro daný náklon x, odpovídá - 30 stupňů až +30 stupňů náklonu
+  int hodnota = mapFloat(x, -0.5, 0.5, 0, 63);
 
-   //np.neoPixelClear();
-   
-   // náklon mimo rozsah bude igorovat a setovat na maximální resp. minimální
-  if(hodnota > 63) hodnota = 63;
-  if(hodnota < 0) hodnota = 0;
+  // Odskok každých X sekund
+  if (millis() - posledniOdskok >= INTERVAL_ODSKOKU) {
+    posledniOdskok = millis();
+
+    // Náhodně o jednu LED doleva nebo doprava
+    if (random(0, 2) == 0) {
+      posunOdskoku--;
+    } else {
+      posunOdskoku++;
+    }
+
+    // Omezení kumulativního posunu
+    posunOdskoku = constrain(posunOdskoku, -63, 63);
+  }
+
+  // Aplikace posunu na polohu kuličky
+  hodnota += posunOdskoku;
+
+  // Poloha musí zůstat mezi LED 0 a 63
+  if (hodnota > 63) hodnota = 63;
+  if (hodnota < 0) hodnota = 0;
 
 //projde všechny diody v pásku
   for(int i=0;i<64;i++)
@@ -92,19 +112,7 @@ citac++; // pokud je při tomto průchodu cyklem kulička v daném rozsahu, při
     randNumber = random(0, 49); // vygenerování nového rozsahu
     citac = 0; // vynulování čítače
   }
-
-  //i++;
-  //if(i == 24)
-  //{
-  //  i = 0;
-  //  np.neoPixelClear();
-  //}
-
-  
- 
-
   delay(10);
-   
 }
 
 
