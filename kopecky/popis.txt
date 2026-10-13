@@ -2,4 +2,4 @@
 Za x milisekund (např. 0,5 - 1,5 sekund) se kulička pohne náhodně doleva nebo doprava
 Hra se jinak bude chovat stejně, je to stížení (kulička uskakuje)
 
-x se bude nastavovat na webové aplikaci (Wi-Fi)
+x se bude nastavovat na webové aplikaci (Wi-Fi + Webová stránka)
