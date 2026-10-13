@@ -1,0 +1,8 @@
+změna barev při náchylnosti k náklonu kuličky, která se při každém novém levelu zvyšuje.
+Čím náchylnější kulička tím teplejší barva to bude (modrá - červená). 
+
+Ze začátku je barva modrá, což je barva co symbolizuje klid, kulička není moc náchylná a tím pádem ani moc rychlá.
+Jakmile dojedeme kuličkou do cíle a přečkáme tam chvilku např. 5 sekund, tak políčko s cílem se přesune jinam.
+Budou tři změny pozice cíle a pokud zvládneme kuličku správně nasměrovat do cíle, tak se přesouváme do dalšího levlu se světlejšími barvami modré.
+Takhle to bude pokračovat do té doby, dokud se pozadí nezmění na červenou.
+Level s červeným pozadím je finální level, pokud i ten zvládneme a nasměrujeme kuličku do cíle, tak se tyč rozbliká zeleně, což symbolizuje konec.
