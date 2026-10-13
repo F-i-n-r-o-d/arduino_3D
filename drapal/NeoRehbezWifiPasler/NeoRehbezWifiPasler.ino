@@ -48,12 +48,12 @@ uint8_t historyCount = 0;
 
 const char* phaseLabel() {
   switch (phase) {
-    case PHASE_START:       return "Ceka na start";
-    case PHASE_LIGHTING:    return "Rozsviceni svetel";
-    case PHASE_WAIT_RANDOM: return "Cekani (nahodna prodleva)";
-    case PHASE_MEASURE:     return "Mereni reakce!";
-    case PHASE_RESULT:      return "Vysledek";
-    case PHASE_FALSE_START: return "Predcasna reakce";
+    case PHASE_START:       return "Čeká na start";
+    case PHASE_LIGHTING:    return "Rozsvícení světel";
+    case PHASE_WAIT_RANDOM: return "Čekání (náhodná prodleva)";
+    case PHASE_MEASURE:     return "Měření reakce!";
+    case PHASE_RESULT:      return "Výsledek";
+    case PHASE_FALSE_START: return "Předčasná reakce";
     default:                return "?";
   }
 }
@@ -119,7 +119,7 @@ void resetTrialToStart() {
   phase = PHASE_START;
   phaseStartMs = millis();
   Serial.println();
-  Serial.println(F(">>> Skubnutim spust dalsi pokus."));
+  Serial.println(F(">>> Škubnutím spusť další pokus."));
 }
 
 void startLighting() {
@@ -132,7 +132,7 @@ void startLighting() {
   phase = PHASE_LIGHTING;
   phaseStartMs = millis();
   Serial.println();
-  Serial.println(F("--- Novy pokus: rozsviceni svetel ---"));
+  Serial.println(F("--- Nový pokus: rozsvícení světel ---"));
 }
 
 void sendDataResponse(WiFiClient& client) {
@@ -169,7 +169,7 @@ void sendHtmlPage(WiFiClient& client) {
 
   client.println(F("<!DOCTYPE html><html><head><meta charset='UTF-8'>"));
   client.println(F("<meta name='viewport' content='width=device-width,initial-scale=1'>"));
-  client.println(F("<title>Reakcni test</title><style>"));
+  client.println(F("<title>Reakční test</title><style>"));
   client.println(F("body{font-family:Segoe UI,sans-serif;background:#141414;color:#eee;text-align:center;padding:16px;}"));
   client.println(F("h1{margin:8px 0 4px;} .sub{color:#9aa;margin-bottom:22px;}"));
   client.println(F(".row{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;}"));
@@ -184,17 +184,17 @@ void sendHtmlPage(WiFiClient& client) {
   client.println(F(".bar{height:18px;background:#3a7;border-radius:4px;min-width:2px;}"));
   client.println(F("#status{font-size:1.15em;margin:10px 0;color:#fc6;}"));
   client.println(F("</style></head><body>"));
-  client.println(F("<h1>Trenink pozornosti</h1>"));
-  client.println(F("<p class='sub'>F1 startovaci svetla &middot; zive vysledky pres WiFi</p>"));
+  client.println(F("<h1>Trénink pozornosti</h1>"));
+  client.println(F("<p class='sub'>F1 startovací světla &middot; živé výsledky přes WiFi</p>"));
   client.println(F("<div id='status'>-</div>"));
   client.println(F("<div class='lights' id='lights'></div>"));
   client.println(F("<div class='row'>"));
-  client.println(F("<div class='card'>Posledni cas<b id='last'>–</b></div>"));
-  client.println(F("<div class='card'>Nejlepsi cas<b id='best'>–</b></div>"));
-  client.println(F("<div class='card'>Platne pokusy<b id='ok'>0</b></div>"));
-  client.println(F("<div class='card'>Predcasne<b id='fs'>0</b></div>"));
+  client.println(F("<div class='card'>Poslední čas<b id='last'>–</b></div>"));
+  client.println(F("<div class='card'>Nejlepší čas<b id='best'>–</b></div>"));
+  client.println(F("<div class='card'>Platné pokusy<b id='ok'>0</b></div>"));
+  client.println(F("<div class='card'>Předčasné<b id='fs'>0</b></div>"));
   client.println(F("</div>"));
-  client.println(F("<h3>Historie casu</h3><div id='bars'></div>"));
+  client.println(F("<h3>Historie časů</h3><div id='bars'></div>"));
   client.println(F("<script>"));
   client.println(F("const L=document.getElementById('lights');"));
   client.println(F("for(let i=0;i<5;i++){const d=document.createElement('div');d.className='dot';L.appendChild(d);}"));
@@ -258,15 +258,15 @@ void handleWebClient() {
 void setup() {
   Serial.begin(115200);
   delay(1500);
-  Serial.println(F("Trenink pozornosti / reakcni test (F1 svetla)"));
-  Serial.println(F("Temata: WiFi komunikace + vizualizace dat (web)"));
+  Serial.println(F("Trénink pozornosti / reakční test (F1 světla)"));
+  Serial.println(F("Témata: WiFi komunikace + vizualizace dat (web)"));
 
   if (!IMU.begin()) {
     Serial.println(F("Chyba IMU!"));
     while (1);
   }
 
-  Serial.print(F("Vytvarim AP: "));
+  Serial.print(F("Vytvářím AP: "));
   Serial.println(ssid);
   if (WiFi.beginAP(ssid, pass) != WL_AP_LISTENING) {
     Serial.println(F("Chyba AP!"));
@@ -274,9 +274,9 @@ void setup() {
   }
   delay(2000);
   server.begin();
-  Serial.print(F("Web bezi na http://"));
+  Serial.print(F("Web běží na http://"));
   Serial.println(WiFi.localIP());
-  Serial.println(F("Pripoj se na WiFi RP2040 / heslo ArduinoWeb"));
+  Serial.println(F("Připoj se na WiFi RP2040 / heslo ArduinoWeb"));
 
   float ax, ay, az;
   delay(50);
@@ -291,7 +291,7 @@ void setup() {
   prevMag = readAccelMagnitude();
   phase = PHASE_START;
   phaseStartMs = millis();
-  Serial.println(F(">>> Skubnutim spust prvni pokus."));
+  Serial.println(F(">>> Škubnutím spusť první pokus."));
 }
 
 void loop() {
@@ -312,7 +312,7 @@ void loop() {
         phaseStartMs = now;
         falseStartCount++;
         allLightsOff();
-        Serial.println(F("PREDCASNA REAKCE behem rozsviceni!"));
+        Serial.println(F("PŘEDČASNÁ REAKCE během rozsvícení!"));
         break;
       }
 
@@ -321,7 +321,7 @@ void loop() {
           lightsOn++;
           showLights(lightsOn);
           phaseStartMs = now;
-          Serial.print(F("Svetlo "));
+          Serial.print(F("Světlo "));
           Serial.print(lightsOn);
           Serial.println(F("/5"));
         }
@@ -329,7 +329,7 @@ void loop() {
           randomHoldMs = random(RANDOM_DELAY_MIN_MS, RANDOM_DELAY_MAX_MS + 1);
           phase = PHASE_WAIT_RANDOM;
           phaseStartMs = now;
-          Serial.println(F("Vsech 5 svetel sviti. Cekam nahodnou dobu..."));
+          Serial.println(F("Všech 5 světel svítí. Čekám náhodnou dobu..."));
         }
       }
       break;
@@ -340,7 +340,7 @@ void loop() {
         phaseStartMs = now;
         falseStartCount++;
         allLightsOff();
-        Serial.println(F("PREDCASNA REAKCE pred zhasnutim!"));
+        Serial.println(F("PŘEDČASNÁ REAKCE před zhasnutím!"));
         break;
       }
 
@@ -351,7 +351,7 @@ void loop() {
         phase = PHASE_MEASURE;
         imuReady = false;
         prevMag = readAccelMagnitude();
-        Serial.println(F("ZHASNUTO! Skubni co nejdriv..."));
+        Serial.println(F("ZHASNUTO! Škubni co nejdřív..."));
       }
       break;
 
@@ -368,7 +368,7 @@ void loop() {
         np.neoPixelShow();
         lightsOn = LIGHT_COUNT;
 
-        Serial.print(F("Reakcni cas: "));
+        Serial.print(F("Reakční čas: "));
         Serial.print(reactionTimeMs);
         Serial.println(F(" ms"));
       }
