@@ -9,10 +9,9 @@
 
 // ---------- Nastaveni hry (lze menit pres Web API /api/config) ----------
 const int LEVELS = 5;
-int   goalsPerLevel = 3;          // pocet cilu v levelu
-unsigned long holdMs = 800;       // jak dlouho se drzet v cili
-float speedMul = 1.0;             // nasobek rychlosti cile
-// rychlost cile v LED/s pro level 1..5 (level 1 = cil stoji)
+int   goalsPerLevel = 3;
+unsigned long holdMs = 800;
+float speedMul = 1.0;
 const float LEVEL_SPEED[LEVELS] = {0.0, 3.0, 6.0, 10.0, 15.0};
 
 NeoPixelConnect np(4, MAXIMUM_NUM_NEOPIXELS, pio0, 0);
@@ -20,8 +19,11 @@ NeoPixelConnect np(4, MAXIMUM_NUM_NEOPIXELS, pio0, 0);
 char ssid[] = "RP2040";
 char pass[] = "ArduinoWeb";
 WiFiServer server(80);
+bool wifiOk = false;
+bool imuOk = false;
+int lastWifiStatus = 0;
 
-float x, y, z;
+float x = 0, y = 0, z = 0;
 
 // ---------- Stav hry ----------
 float targetPos;
@@ -83,8 +85,53 @@ void printStatus() {
   Serial.print(" s | ");    Serial.println(hodnoceni());
 }
 
+// ---------- Vytvoreni access pointu ----------
+bool apListening() {
+  return WiFi.status() == WL_AP_LISTENING || WiFi.status() == WL_AP_CONNECTED;
+}
+
+bool startAP() {
+  if (WiFi.status() == WL_NO_MODULE) {
+    Serial.println("CHYBA: Wi-Fi modul nenalezen (WL_NO_MODULE).");
+    return false;
+  }
+
+  Serial.print("Firmware Wi-Fi modulu: ");
+  Serial.print(WiFi.firmwareVersion());
+  Serial.print(" (nejnovejsi: ");
+  Serial.print(WIFI_FIRMWARE_LATEST_VERSION);
+  Serial.println(")");
+
+  const uint8_t channels[] = {1, 6, 11};
+
+  // Pokus 1-3: AP s heslem na ruznych kanalech
+  for (int i = 0; i < 3; i++) {
+    Serial.print("Vytvarim AP '"); Serial.print(ssid);
+    Serial.print("' s heslem, kanal "); Serial.println(channels[i]);
+    WiFi.beginAP(ssid, pass, channels[i]);
+    delay(3000);
+    if (apListening()) {
+      Serial.println("AP vytvoren (s heslem).");
+      return true;
+    }
+    WiFi.end();
+    delay(500);
+  }
+
+  // Pokus 4: AP bez hesla (zaloha)
+  Serial.println("Zkousim AP BEZ hesla...");
+  WiFi.beginAP(ssid);
+  delay(3000);
+  if (apListening()) {
+    Serial.println("AP vytvoren (BEZ hesla - pripoj se bez zadavani hesla).");
+    return true;
+  }
+
+  Serial.println("CHYBA: AP se nepodarilo vytvorit. Aktualizuj firmware Wi-Fi modulu.");
+  return false;
+}
+
 // ---------- Web API pomocne funkce ----------
-// Vytahne cislo parametru z prvni radky pozadavku, napr. "hold=800"
 bool getParam(const String &line, const char *key, float &out) {
   int idx = line.indexOf(key);
   if (idx < 0) return false;
@@ -122,9 +169,9 @@ void sendStatusJson(WiFiClient &c) {
 
 void sendConfigJson(WiFiClient &c) {
   sendJsonHeader(c);
-  c.print("{\"hold\":");  c.print(holdMs);
-  c.print(",\"goals\":"); c.print(goalsPerLevel);
-  c.print(",\"speed\":"); c.print(speedMul, 2);
+  c.print("{\"hold\":");   c.print(holdMs);
+  c.print(",\"goals\":");  c.print(goalsPerLevel);
+  c.print(",\"speed\":");  c.print(speedMul, 2);
   c.print(",\"levels\":"); c.print(LEVELS);
   c.println("}");
 }
@@ -135,11 +182,11 @@ void sendPage(WiFiClient &client) {
   client.println("Connection: close");
   client.println();
 
-  client.println(F("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Rehabko Monitor</title>"));
+  client.println(F("<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Rehabko Monitor</title>"));
   client.println(F("<style>"));
   client.println(F("body{font-family:Segoe UI,sans-serif;background:#181818;color:#eee;text-align:center;padding:20px;}"));
-  client.println(F(".track{width:640px;height:46px;background:#0d1117;margin:35px auto;border-radius:23px;position:relative;border:2px solid #30363d;box-shadow:inset 0 2px 6px #000;}"));
-  client.println(F("#target{position:absolute;height:100%;width:100px;background:#3fb950;opacity:0.65;border-radius:8px;}"));
+  client.println(F(".track{width:640px;max-width:95%;height:46px;background:#0d1117;margin:35px auto;border-radius:23px;position:relative;border:2px solid #30363d;box-shadow:inset 0 2px 6px #000;}"));
+  client.println(F("#target{position:absolute;height:100%;width:15.6%;background:#3fb950;opacity:0.65;border-radius:8px;}"));
   client.println(F("#ball{position:absolute;width:34px;height:34px;background:#f85149;border-radius:50%;top:6px;box-shadow:0 0 12px #f85149;}"));
   client.println(F(".card{background:#21262d;display:inline-block;padding:12px 24px;border-radius:10px;margin:8px;border:1px solid #30363d;}"));
   client.println(F("h1{margin-bottom:5px;} b{color:#58a6ff;font-size:1.3em;}"));
@@ -147,12 +194,12 @@ void sendPage(WiFiClient &client) {
   client.println(F("input{width:70px;background:#0d1117;color:#eee;border:1px solid #30363d;border-radius:6px;padding:4px;text-align:center;}"));
   client.println(F("button{background:#3fb950;border:0;color:#000;font-size:1em;padding:8px 20px;border-radius:8px;cursor:pointer;margin:6px;}"));
   client.println(F("#over{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);z-index:10;}"));
-  client.println(F("#box{background:#21262d;border:2px solid #3fb950;border-radius:16px;width:380px;margin:12% auto;padding:30px;}"));
+  client.println(F("#box{background:#21262d;border:2px solid #3fb950;border-radius:16px;width:380px;max-width:85%;margin:12% auto;padding:30px;}"));
   client.println(F("#box b{color:#3fb950;font-size:1.8em;}"));
   client.println(F("</style></head><body>"));
 
   client.println(F("<h1>Rehabilitační pomůcka</h1><p>Živý monitor náklonu</p>"));
-  client.println(F("<div class='track'><div id='target'></div><div id='ball'></div></div>"));
+  client.println(F("<div class='track' id='track'><div id='target'></div><div id='ball'></div></div>"));
   client.println(F("<div id='msg'></div>"));
   client.println(F("<div class='card'>Level<br><b id='lv'>1</b> / <span id='lvs'>5</span></div>"));
   client.println(F("<div class='card'>Splněno<br><b id='gl'>0</b> / <span id='gls'>3</span></div>"));
@@ -180,8 +227,9 @@ void sendPage(WiFiClient &client) {
   client.println(F("  .then(r=>r.json()).then(c=>{$('cHold').value=c.hold;$('cGoals').value=c.goals;$('cSpeed').value=c.speed;$('cfgmsg').innerText='Uloženo';setTimeout(()=>{$('cfgmsg').innerText='';},1500);}).catch(()=>{});}"));
   client.println(F("function loopData(){"));
   client.println(F("  fetch('/api/status').then(r=>r.json()).then(d=>{"));
-  client.println(F("    $('ball').style.left = (d.ball * 9.5) + 'px';"));
-  client.println(F("    $('target').style.left = (d.target * 10) + 'px';"));
+  client.println(F("    let w = $('track').clientWidth;"));
+  client.println(F("    $('ball').style.left = ((d.ball/63) * (w-34-4)) + 'px';"));
+  client.println(F("    $('target').style.left = ((d.target/64) * w) + 'px';"));
   client.println(F("    $('lv').innerText = d.level; $('lvs').innerText = d.levels;"));
   client.println(F("    $('gl').innerText = d.goal; $('gls').innerText = d.goals;"));
   client.println(F("    $('sc').innerText = d.score; $('tm').innerText = d.time; $('ac').innerText = d.accuracy;"));
@@ -193,27 +241,76 @@ void sendPage(WiFiClient &client) {
   client.println(F("</script></body></html>"));
 }
 
+void handleClient() {
+  WiFiClient client = server.available();
+  if (!client) return;
+
+  String currentLine = "";
+  String reqLine = "";
+  bool firstLine = true;
+  unsigned long t0 = millis();
+
+  while (client.connected() && millis() - t0 < 1500) {   // timeout 1,5 s
+    if (client.available()) {
+      char c = client.read();
+
+      if (c == '\n') {
+        if (firstLine) {
+          reqLine = currentLine;
+          firstLine = false;
+        }
+        if (currentLine.length() == 0) {   // konec hlavicek -> odpoved
+          if (reqLine.indexOf("GET /api/status") >= 0) {
+            sendStatusJson(client);
+          } else if (reqLine.indexOf("GET /api/restart") >= 0) {
+            resetGame();
+            sendJsonHeader(client);
+            client.println("{\"ok\":true}");
+          } else if (reqLine.indexOf("GET /api/config") >= 0) {
+            float v;
+            if (getParam(reqLine, "hold=", v))  holdMs = constrain((long)v, 300, 5000);
+            if (getParam(reqLine, "goals=", v)) goalsPerLevel = constrain((int)v, 1, 10);
+            if (getParam(reqLine, "speed=", v)) speedMul = constrain(v, 0.5, 3.0);
+            sendConfigJson(client);
+          } else if (reqLine.indexOf("GET / ") >= 0 || reqLine.indexOf("GET /index") >= 0) {
+            sendPage(client);
+          } else {
+            client.println("HTTP/1.1 404 Not Found");
+            client.println("Connection: close");
+            client.println();
+          }
+          break;
+        } else {
+          currentLine = "";
+        }
+      } else if (c != '\r') {
+        if (currentLine.length() < 200) currentLine += c;
+      }
+    }
+  }
+  delay(2);
+  client.stop();
+}
+
 void setup() {
   Serial.begin(115200);
-  delay(1500);
+  delay(2000);                       // nic nevyzaduje otevreny Serial monitor
+  Serial.println("--- START ---");
 
-  if (!IMU.begin()) {
-    Serial.println("Chyba IMU!");
-    while (1);
+  // 1. Wi-Fi access point jako PRVNI
+  wifiOk = startAP();
+  if (wifiOk) {
+    server.begin();
+    Serial.print("Pripoj se k siti '"); Serial.print(ssid);
+    Serial.print("' (heslo: "); Serial.print(pass);
+    Serial.print(") a otevri http://");
+    Serial.println(WiFi.localIP());
+    Serial.println("API: /api/status  /api/config  /api/restart");
   }
 
-  Serial.print("Vytvarim AP: ");
-  Serial.println(ssid);
-  if (WiFi.beginAP(ssid, pass) != WL_AP_LISTENING) {
-    Serial.println("Chyba AP!");
-    while (1);
-  }
-
-  delay(2000);
-  server.begin();
-  Serial.print("Web server bezi na http://");
-  Serial.println(WiFi.localIP());
-  Serial.println("API: /api/status  /api/config  /api/restart");
+  // 2. Akcelerometr (chyba nezastavi Wi-Fi)
+  imuOk = IMU.begin();
+  if (!imuOk) Serial.println("Chyba IMU! Hra nepojede, ale Wi-Fi bezi.");
 
   randomSeed(analogRead(A0) ^ micros());
   resetGame();
@@ -224,8 +321,18 @@ void loop() {
   unsigned long dtMs = now - lastTick;
   lastTick = now;
 
+  // Hlaseni pripojeni / odpojeni zarizeni k AP
+  if (wifiOk) {
+    int st = WiFi.status();
+    if (st != lastWifiStatus) {
+      lastWifiStatus = st;
+      if (st == WL_AP_CONNECTED) Serial.println("Zarizeni se pripojilo k AP.");
+      else if (st == WL_AP_LISTENING) Serial.println("Zarizeni se odpojilo od AP.");
+    }
+  }
+
   // 1. Cteni akcelerometru
-  if (IMU.accelerationAvailable()) {
+  if (imuOk && IMU.accelerationAvailable()) {
     IMU.readAcceleration(x, y, z);
   }
   hodnota = mapFloat(x, -0.5, 0.5, 0, 63);
@@ -295,46 +402,5 @@ void loop() {
   }
 
   // 6. Web server + REST API
-  WiFiClient client = server.available();
-  if (client) {
-    String currentLine = "";
-    String reqLine = "";
-    bool firstLine = true;
-
-    while (client.connected()) {
-      if (client.available()) {
-        char c = client.read();
-
-        if (c == '\n') {
-          if (firstLine) {            // ulozime prvni radek pozadavku (GET ...)
-            reqLine = currentLine;
-            firstLine = false;
-          }
-          if (currentLine.length() == 0) {   // konec hlavicek -> odpoved
-            if (reqLine.indexOf("GET /api/status") >= 0) {
-              sendStatusJson(client);
-            } else if (reqLine.indexOf("GET /api/restart") >= 0) {
-              resetGame();
-              sendJsonHeader(client);
-              client.println("{\"ok\":true}");
-            } else if (reqLine.indexOf("GET /api/config") >= 0) {
-              float v;
-              if (getParam(reqLine, "hold=", v))  holdMs = constrain((long)v, 300, 5000);
-              if (getParam(reqLine, "goals=", v)) goalsPerLevel = constrain((int)v, 1, 10);
-              if (getParam(reqLine, "speed=", v)) speedMul = constrain(v, 0.5, 3.0);
-              sendConfigJson(client);
-            } else {
-              sendPage(client);
-            }
-            break;
-          } else {
-            currentLine = "";
-          }
-        } else if (c != '\r') {
-          currentLine += c;
-        }
-      }
-    }
-    client.stop();
-  }
-}
+  if (wifiOk) handleClient();
+} //s
