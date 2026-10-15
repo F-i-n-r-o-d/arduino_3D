@@ -7,7 +7,7 @@
 #define ZONE_SIZE 10
 #define MAX_START 54
 
-// ---------- Nastaveni hry (lze menit pres Web API /api/config) ----------
+// ---------- Nastaveni hry (lze menit pres Web API /api/config nebo Serial) ----------
 const int LEVELS = 5;
 int   goalsPerLevel = 3;
 unsigned long holdMs = 800;
@@ -37,6 +37,10 @@ unsigned long lastTick = 0, holdStart = 0, goalSpawn = 0, lastReport = 0;
 unsigned long onTargetMs = 0, playedMs = 0;
 int   hodnota = 0;
 
+// ---------- Seriova komunikace (JSON pres USB kabel) ----------
+bool serialJson = true;           // true = JSON radky, false = citelny text
+String serialLine = "";
+
 int mapFloat(float val, float in_min, float in_max, int out_min, int out_max) {
   return (val - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
@@ -51,6 +55,57 @@ const char* hodnoceni() {
   if (a >= 70) return "Skvele, drzis se v cili!";
   if (a >= 40) return "Dobre, jen tak dal.";
   return "Zkus se vic soustredit na zelenou zonu.";
+}
+
+// ---------- JSON (spolecne pro web i Serial) ----------
+// ev = nazev udalosti (start/goal/level/end/status) nebo nullptr
+void writeStatusJson(Print &p, const char* ev) {
+  unsigned long endT = (state == 1) ? gameEnd : millis();
+  p.print("{");
+  if (ev != nullptr) {
+    p.print("\"event\":\""); p.print(ev); p.print("\",");
+  }
+  p.print("\"x\":");        p.print(x, 2);
+  p.print(",\"ball\":");    p.print(hodnota);
+  p.print(",\"target\":");  p.print(targetPos, 1);
+  p.print(",\"level\":");   p.print(level);
+  p.print(",\"levels\":");  p.print(LEVELS);
+  p.print(",\"goal\":");    p.print(goalsInLevel);
+  p.print(",\"goals\":");   p.print(goalsPerLevel);
+  p.print(",\"score\":");   p.print(score);
+  p.print(",\"time\":");    p.print((endT - gameStart) / 1000.0, 1);
+  p.print(",\"accuracy\":"); p.print(accuracy(), 0);
+  p.print(",\"state\":");   p.print(state);
+  p.print(",\"message\":\""); p.print(hodnoceni()); p.println("\"}");
+}
+
+void writeConfigJson(Print &p) {
+  p.print("{\"hold\":");   p.print(holdMs);
+  p.print(",\"goals\":");  p.print(goalsPerLevel);
+  p.print(",\"speed\":");  p.print(speedMul, 2);
+  p.print(",\"levels\":"); p.print(LEVELS);
+  p.println("}");
+}
+
+void printStatus() {
+  unsigned long endT = (state == 1) ? gameEnd : millis();
+  Serial.print("Level ");   Serial.print(level);
+  Serial.print("/");        Serial.print(LEVELS);
+  Serial.print(" | cil ");  Serial.print(goalsInLevel);
+  Serial.print("/");        Serial.print(goalsPerLevel);
+  Serial.print(" | skore ");Serial.print(score);
+  Serial.print(" | presnost "); Serial.print(accuracy(), 0);
+  Serial.print("% | cas "); Serial.print((endT - gameStart) / 1000);
+  Serial.print(" s | ");    Serial.println(hodnoceni());
+}
+
+void logEvent(const char* ev) {
+  if (serialJson) {
+    writeStatusJson(Serial, ev);
+  } else {
+    Serial.print(">>> "); Serial.print(ev); Serial.print(" | ");
+    printStatus();
+  }
 }
 
 void spawnTarget() {
@@ -68,21 +123,11 @@ void resetGame() {
   onTargetMs = 0;
   playedMs = 0;
   gameStart = millis();
+  gameEnd = gameStart;
   lastTick = gameStart;
   lastReport = gameStart;
   spawnTarget();
-  Serial.println("=== NOVA HRA ===");
-}
-
-void printStatus() {
-  Serial.print("Level ");   Serial.print(level);
-  Serial.print("/");        Serial.print(LEVELS);
-  Serial.print(" | cil ");  Serial.print(goalsInLevel);
-  Serial.print("/");        Serial.print(goalsPerLevel);
-  Serial.print(" | skore ");Serial.print(score);
-  Serial.print(" | presnost "); Serial.print(accuracy(), 0);
-  Serial.print("% | cas "); Serial.print((millis() - gameStart) / 1000);
-  Serial.print(" s | ");    Serial.println(hodnoceni());
+  logEvent("start");
 }
 
 // ---------- Vytvoreni access pointu ----------
@@ -104,7 +149,6 @@ bool startAP() {
 
   const uint8_t channels[] = {1, 6, 11};
 
-  // Pokus 1-3: AP s heslem na ruznych kanalech
   for (int i = 0; i < 3; i++) {
     Serial.print("Vytvarim AP '"); Serial.print(ssid);
     Serial.print("' s heslem, kanal "); Serial.println(channels[i]);
@@ -118,7 +162,6 @@ bool startAP() {
     delay(500);
   }
 
-  // Pokus 4: AP bez hesla (zaloha)
   Serial.println("Zkousim AP BEZ hesla...");
   WiFi.beginAP(ssid);
   delay(3000);
@@ -131,7 +174,7 @@ bool startAP() {
   return false;
 }
 
-// ---------- Web API pomocne funkce ----------
+// ---------- Pomocne funkce pro parametry ----------
 bool getParam(const String &line, const char *key, float &out) {
   int idx = line.indexOf(key);
   if (idx < 0) return false;
@@ -142,38 +185,21 @@ bool getParam(const String &line, const char *key, float &out) {
   return true;
 }
 
+// Aplikuje hold= goals= speed= z textu (HTTP radek i Serial prikaz)
+void applyConfig(const String &line) {
+  float v;
+  if (getParam(line, "hold=", v))  holdMs = constrain((long)v, 300, 5000);
+  if (getParam(line, "goals=", v)) goalsPerLevel = constrain((int)v, 1, 10);
+  if (getParam(line, "speed=", v)) speedMul = constrain(v, 0.5, 3.0);
+}
+
+// ---------- Web ----------
 void sendJsonHeader(WiFiClient &c) {
   c.println("HTTP/1.1 200 OK");
   c.println("Content-Type: application/json");
   c.println("Access-Control-Allow-Origin: *");
   c.println("Connection: close");
   c.println();
-}
-
-void sendStatusJson(WiFiClient &c) {
-  unsigned long endT = (state == 1) ? gameEnd : millis();
-  sendJsonHeader(c);
-  c.print("{\"x\":");        c.print(x, 2);
-  c.print(",\"ball\":");     c.print(hodnota);
-  c.print(",\"target\":");   c.print(targetPos, 1);
-  c.print(",\"level\":");    c.print(level);
-  c.print(",\"levels\":");   c.print(LEVELS);
-  c.print(",\"goal\":");     c.print(goalsInLevel);
-  c.print(",\"goals\":");    c.print(goalsPerLevel);
-  c.print(",\"score\":");    c.print(score);
-  c.print(",\"time\":");     c.print((endT - gameStart) / 1000.0, 1);
-  c.print(",\"accuracy\":"); c.print(accuracy(), 0);
-  c.print(",\"state\":");    c.print(state);
-  c.print(",\"message\":\""); c.print(hodnoceni()); c.println("\"}");
-}
-
-void sendConfigJson(WiFiClient &c) {
-  sendJsonHeader(c);
-  c.print("{\"hold\":");   c.print(holdMs);
-  c.print(",\"goals\":");  c.print(goalsPerLevel);
-  c.print(",\"speed\":");  c.print(speedMul, 2);
-  c.print(",\"levels\":"); c.print(LEVELS);
-  c.println("}");
 }
 
 void sendPage(WiFiClient &client) {
@@ -235,7 +261,7 @@ void sendPage(WiFiClient &client) {
   client.println(F("    $('sc').innerText = d.score; $('tm').innerText = d.time; $('ac').innerText = d.accuracy;"));
   client.println(F("    $('msg').innerText = d.accuracy>=70 ? 'Skvěle, držíš se v cíli!' : (d.accuracy>=40 ? 'Dobře, jen tak dál.' : 'Zkus se víc soustředit na zelenou zónu.');"));
   client.println(F("    if(d.state==1){ $('fs').innerText=d.score; $('ft').innerText=d.time; $('fa').innerText=d.accuracy; $('over').style.display='block'; }"));
-  client.println(F("  }).catch(()=>{}).finally(()=>{ setTimeout(loopData, 40); });"));
+  client.println(F("  }).catch(()=>{}).finally(()=>{ setTimeout(loopData, 100); });"));
   client.println(F("}"));
   client.println(F("loadCfg(); loopData();"));
   client.println(F("</script></body></html>"));
@@ -250,7 +276,7 @@ void handleClient() {
   bool firstLine = true;
   unsigned long t0 = millis();
 
-  while (client.connected() && millis() - t0 < 1500) {   // timeout 1,5 s
+  while (client.connected() && millis() - t0 < 500) {   // timeout 0,5 s
     if (client.available()) {
       char c = client.read();
 
@@ -261,17 +287,16 @@ void handleClient() {
         }
         if (currentLine.length() == 0) {   // konec hlavicek -> odpoved
           if (reqLine.indexOf("GET /api/status") >= 0) {
-            sendStatusJson(client);
+            sendJsonHeader(client);
+            writeStatusJson(client, nullptr);
           } else if (reqLine.indexOf("GET /api/restart") >= 0) {
             resetGame();
             sendJsonHeader(client);
             client.println("{\"ok\":true}");
           } else if (reqLine.indexOf("GET /api/config") >= 0) {
-            float v;
-            if (getParam(reqLine, "hold=", v))  holdMs = constrain((long)v, 300, 5000);
-            if (getParam(reqLine, "goals=", v)) goalsPerLevel = constrain((int)v, 1, 10);
-            if (getParam(reqLine, "speed=", v)) speedMul = constrain(v, 0.5, 3.0);
-            sendConfigJson(client);
+            applyConfig(reqLine);
+            sendJsonHeader(client);
+            writeConfigJson(client);
           } else if (reqLine.indexOf("GET / ") >= 0 || reqLine.indexOf("GET /index") >= 0) {
             sendPage(client);
           } else {
@@ -290,6 +315,46 @@ void handleClient() {
   }
   delay(2);
   client.stop();
+}
+
+// ---------- Seriove prikazy (USB kabel, bez Wi-Fi) ----------
+void processCommand(String cmd) {
+  cmd.trim();
+  if (cmd.length() == 0) return;
+
+  if (cmd == "status") {
+    if (serialJson) writeStatusJson(Serial, "status");
+    else printStatus();
+  } else if (cmd == "restart") {
+    resetGame();
+  } else if (cmd.startsWith("config")) {
+    applyConfig(cmd);
+    writeConfigJson(Serial);
+  } else if (cmd == "json") {
+    serialJson = true;
+    Serial.println("{\"ok\":true,\"mode\":\"json\"}");
+  } else if (cmd == "text") {
+    serialJson = false;
+    Serial.println("Rezim: citelny text");
+  } else if (cmd == "help") {
+    Serial.println("Prikazy: status | restart | config hold=800 goals=3 speed=1.0 | json | text | help");
+  } else {
+    Serial.println("Neznamy prikaz. Napis 'help'.");
+  }
+}
+
+void handleSerial() {
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (serialLine.length() > 0) {
+        processCommand(serialLine);
+        serialLine = "";
+      }
+    } else if (serialLine.length() < 100) {
+      serialLine += c;
+    }
+  }
 }
 
 void setup() {
@@ -313,6 +378,7 @@ void setup() {
   if (!imuOk) Serial.println("Chyba IMU! Hra nepojede, ale Wi-Fi bezi.");
 
   randomSeed(analogRead(A0) ^ micros());
+  Serial.println("Serial prikazy: napis 'help'");
   resetGame();
 }
 
@@ -361,23 +427,20 @@ void loop() {
         if (base < 20) base = 20;
         score += base * level;
         goalsInLevel++;
-        Serial.print(">>> Cil splnen! Skore: ");
-        Serial.println(score);
+        logEvent("goal");
 
         if (goalsInLevel >= goalsPerLevel) {
           goalsInLevel = 0;
           level++;
           if (level > LEVELS) {
             level = LEVELS;
+            goalsInLevel = goalsPerLevel;
             state = 1;
             gameEnd = now;
             np.neoPixelFill(0, 60, 0, true);
-            Serial.println("=========== KONEC HRY ===========");
-            Serial.print("Konecne skore: "); Serial.println(score);
-            Serial.print("Celkovy cas: ");   Serial.print((gameEnd - gameStart) / 1000.0, 1); Serial.println(" s");
-            Serial.print("Presnost: ");      Serial.print(accuracy(), 0); Serial.println("%");
+            logEvent("end");
           } else {
-            Serial.print("*** LEVEL "); Serial.println(level);
+            logEvent("level");
           }
         }
         if (state == 0) spawnTarget();
@@ -387,20 +450,24 @@ void loop() {
     }
 
     // 4. Vykresleni LED pasku
-    for (int i = 0; i < 64; i++) {
-      if (i == hodnota)                               np.neoPixelSetValue((uint8_t)i, 120, 0, 0, false);
-      else if (i >= tStart && i < tStart + ZONE_SIZE) np.neoPixelSetValue((uint8_t)i, 0, 30, 0, false);
-      else                                            np.neoPixelSetValue((uint8_t)i, 0, 0, 10, false);
+    if (state == 0) {
+      for (int i = 0; i < 64; i++) {
+        if (i == hodnota)                               np.neoPixelSetValue((uint8_t)i, 120, 0, 0, false);
+        else if (i >= tStart && i < tStart + ZONE_SIZE) np.neoPixelSetValue((uint8_t)i, 0, 30, 0, false);
+        else                                            np.neoPixelSetValue((uint8_t)i, 0, 0, 10, false);
+      }
+      np.neoPixelShow();
     }
-    np.neoPixelShow();
 
     // 5. Prubezny vypis kazdou sekundu
     if (now - lastReport >= 1000) {
       lastReport = now;
-      printStatus();
+      if (serialJson) writeStatusJson(Serial, "status");
+      else printStatus();
     }
   }
 
-  // 6. Web server + REST API
+  // 6. Seriove prikazy + web server + REST API
+  handleSerial();
   if (wifiOk) handleClient();
-} //s
+}
