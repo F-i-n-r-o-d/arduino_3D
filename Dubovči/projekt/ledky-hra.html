@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LED hra</title>
+<style>
+:root{--bg:#10151c;--panel:#18212c;--line:#2b3a4b;--tx:#e8eef5;--mut:#8da0b4;--p1:#3ddcff;--p2:#ff4f9a;--ok:#9dff6a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 "Trebuchet MS",Verdana,sans-serif;padding:16px;max-width:900px;margin:auto}
+h1{font-size:1.5rem;margin:0 0 12px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+button{background:var(--panel);color:var(--tx);border:2px solid var(--line);border-radius:8px;padding:10px 16px;font:inherit;cursor:pointer}
+button:hover{border-color:var(--mut)} button:focus-visible{outline:3px solid var(--ok)}
+button.on{border-color:var(--ok);color:var(--ok)}
+#start{background:var(--ok);color:#10151c;border-color:var(--ok);font-weight:bold}
+.players{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{background:var(--panel);border:2px solid var(--line);border-radius:14px;padding:16px;text-align:center}
+.card.p1{border-color:var(--p1)} .card.p2{border-color:var(--p2)}
+.card.off{opacity:.3}
+.card h2{margin:0;font-size:1rem;color:var(--mut)}
+.score{font-size:5rem;font-weight:bold;line-height:1.1}
+.p1 .score{color:var(--p1)} .p2 .score{color:var(--p2)}
+.meta{display:flex;justify-content:space-around;color:var(--mut)} .meta b{color:var(--tx);font-size:1.3rem}
+#status{margin:14px 0;padding:10px 14px;background:var(--panel);border-left:5px solid var(--ok);border-radius:6px}
+#rec{display:none;text-align:center;font-size:2rem;font-weight:bold;color:var(--ok);margin:10px 0}
+table{width:100%;border-collapse:collapse} th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--mut);font-weight:normal}
+small{color:var(--mut)}
+@media(max-width:560px){.score{font-size:3.5rem}}
+#sim{display:none;background:var(--panel);border:2px solid var(--line);border-radius:14px;padding:12px;margin-top:14px}
+#strip{display:flex;gap:2px;padding:10px;background:#0a0d11;border-radius:10px;justify-content:space-between}
+#strip i{flex:1;min-width:0;height:12px;border-radius:50%;background:#2a2f37;display:block}
+#sim label{display:flex;gap:10px;align-items:center;margin-top:10px;color:var(--mut)} #sim input{flex:1}
+</style>
+</head>
+<body>
+<h1>LED hra</h1>
+
+<div class="bar">
+  <button id="conn">Připojit Arduino (USB)</button>
+  <button class="mode on" data-m="solo">Sólo</button>
+  <button class="mode" data-m="versus">Proti sobě</button>
+  <button class="mode" data-m="coop">Spolu</button>
+  <button id="simbtn">Simulovaná tyč</button>
+  <button id="start">Start</button>
+</div>
+
+<div id="rec">Nový rekord!</div>
+
+<div class="players">
+  <div class="card p1" id="c1"><h2>Hráč 1</h2><div class="score" id="s1">0</div>
+    <div class="meta"><span>Čas <b id="t1">30</b></span><span>Level <b id="l1">1</b></span></div></div>
+  <div class="card p2 off" id="c2"><h2>Hráč 2</h2><div class="score" id="s2">0</div>
+    <div class="meta"><span>Čas <b id="t2">30</b></span><span>Level <b id="l2">1</b></span></div></div>
+</div>
+
+<div id="sim"><div id="strip"></div>
+  <label>Náklon tyče <input type="range" id="tilt" min="-30" max="30" value="0"> <span id="deg">0°</span></label></div>
+<div id="status">Připoj Arduino, nebo zkus hru klávesami 1 a 2 (simulace trefy).</div>
+
+<h3>Tabulka rekordů</h3>
+<table><thead><tr><th>Režim</th><th>Skóre</th><th>Datum</th></tr></thead><tbody id="tb"></tbody></table>
+<p><small>Arduino posílá po USB (115200) řádky <code>HIT 1</code> nebo <code>HIT 2</code>. Stránka posílá <code>START</code>, <code>LEVEL n</code> a <code>END</code>.</small></p>
+
+<script>
+const DUR=30, PER_LEVEL=5, MAXLV=10, KEY='ledky-rekordy';
+const NAMES={solo:'Sólo',versus:'Proti sobě',coop:'Spolu'};
+let mode='solo', running=false, score=[0,0], lvl=[1,1], left=DUR, timer=null, port=null, writer=null;
+const $=id=>document.getElementById(id);
+const status=t=>$('status').textContent=t;
+
+/* ---------- zvuk ---------- */
+let ac; const A=()=>ac||(ac=new (window.AudioContext||window.webkitAudioContext)());
+function tone(f,t0,d,type='square',v=.15){const c=A(),o=c.createOscillator(),g=c.createGain();
+  o.type=type;o.frequency.value=f;g.gain.setValueAtTime(v,c.currentTime+t0);
+  g.gain.exponentialRampToValueAtTime(.001,c.currentTime+t0+d);o.connect(g).connect(c.destination);
+  o.start(c.currentTime+t0);o.stop(c.currentTime+t0+d+.02);}
+function hitSound(l){ // vyšší level = výraznější zvuk
+  tone(300+l*70,0,.12,'square',.12); if(l>=4)tone(600+l*90,.06,.12,'triangle',.14); if(l>=8)tone(1200+l*50,.12,.15,'sawtooth',.1);}
+function fanfare(){[523,659,784,1047].forEach((f,i)=>tone(f,i*.14,.25,'square',.15));tone(1047,.6,.6,'triangle',.18);}
+function recordSound(){[784,988,1175,1568,1175,1568,2093].forEach((f,i)=>tone(f,i*.09,.2,'triangle',.18));}
+function say(t){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang='cs-CZ';speechSynthesis.speak(u);}catch(e){}}
+
+/* ---------- rekordy ---------- */
+const load=()=>{try{return JSON.parse(localStorage.getItem(KEY))||[]}catch(e){return[]}};
+function save(m,s){let r=load();const best=Math.max(0,...r.filter(x=>x.m===m).map(x=>x.s));
+  r.push({m,s,d:new Date().toLocaleDateString('cs-CZ')});
+  r.sort((a,b)=>b.s-a.s);
+  const keep=[];['solo','versus','coop'].forEach(k=>keep.push(...r.filter(x=>x.m===k).slice(0,5)));
+  try{localStorage.setItem(KEY,JSON.stringify(keep))}catch(e){}
+  render();return s>best&&s>0;}
+function render(){const r=load().sort((a,b)=>b.s-a.s);
+  $('tb').innerHTML=r.length?r.map(x=>`<tr><td>${NAMES[x.m]}</td><td>${x.s}</td><td>${x.d}</td></tr>`).join(''):'<tr><td colspan="3">Zatím žádný rekord</td></tr>';}
+
+/* ---------- hra ---------- */
+function ui(){
+  $('s1').textContent=score[0];$('s2').textContent=score[1];
+  $('l1').textContent=lvl[0];$('l2').textContent=lvl[1];
+  $('t1').textContent=$('t2').textContent=left;
+  $('c2').classList.toggle('off',mode==='solo');}
+function send(s){if(simOn)simCmd(s);if(writer)writer.write(new TextEncoder().encode(s+'\n')).catch(()=>{});}
+function startGame(){
+  A().resume();score=[0,0];lvl=[1,1];left=DUR;running=true;$('rec').style.display='none';
+  send('MODE '+mode);send('START');send('LEVEL 1');ui();
+  status('Hra běží – '+NAMES[mode]+'. Trefuj!');
+  clearInterval(timer);timer=setInterval(()=>{left--;ui();if(left<=0)endGame();},1000);}
+function hit(p){
+  if(!running)return;
+  if(mode==='solo')p=0;
+  score[p]++;const nl=Math.min(MAXLV,1+Math.floor(score[p]/PER_LEVEL));
+  if(nl!==lvl[p]){lvl[p]=nl;send('LEVEL '+nl);status('Hráč '+(p+1)+' postoupil na level '+nl+'!');}
+  else status('Trefa! Hráč '+(p+1)+' má '+score[p]+' b.');
+  hitSound(lvl[p]);ui();}
+function endGame(){
+  clearInterval(timer);running=false;send('END');fanfare();
+  const total=score[0]+score[1];let val,msg,voice;
+  if(mode==='solo'){val=score[0];msg='Konec hry. Skóre: '+val;voice='Konec hry. Tvoje skóre je '+val;}
+  else if(mode==='coop'){val=total;msg='Konec hry. Společné skóre: '+val;voice='Konec hry. Společné skóre je '+val;}
+  else{val=Math.max(...score);
+    if(score[0]===score[1]){msg='Remíza '+score[0]+':'+score[1];voice='Remíza';}
+    else{const w=score[0]>score[1]?1:2;msg='Vyhrál hráč '+w+' ('+score[0]+':'+score[1]+')';voice='Vyhrál hráč '+(w===1?'jedna':'dva');}}
+  const isRec=save(mode,val);status(msg);
+  setTimeout(()=>{say(voice);},900);
+  if(isRec){$('rec').style.display='block';setTimeout(recordSound,1500);}}
+
+/* ---------- Arduino přes USB (Web Serial) ---------- */
+async function connect(){
+  if(!('serial' in navigator)){status('Tento prohlížeč nepodporuje USB (Web Serial). Použij Chrome nebo Edge na počítači, případně Chrome na Androidu.');return;}
+  try{
+    port=await navigator.serial.requestPort();await port.open({baudRate:115200});
+    writer=port.writable.getWriter();$('conn').textContent='Arduino připojeno';$('conn').classList.add('on');
+    status('Arduino připojeno. Zmáčkni Start.');readLoop();
+  }catch(e){status('Připojení se nezdařilo: '+e.message);}}
+async function readLoop(){
+  const dec=new TextDecoderStream();port.readable.pipeTo(dec.writable).catch(()=>{});
+  const rd=dec.readable.getReader();let buf='';
+  try{while(true){const{value,done}=await rd.read();if(done)break;buf+=value;
+    let i;while((i=buf.indexOf('\n'))>=0){const line=buf.slice(0,i).trim();buf=buf.slice(i+1);
+      const m=/^HIT\s*([12])$/i.exec(line);if(m)hit(+m[1]-1);}}}
+  catch(e){}
+  $('conn').textContent='Připojit Arduino (USB)';$('conn').classList.remove('on');writer=null;status('Arduino odpojeno.');}
+
+/* ---------- simulovaná tyč (stejná logika jako skica pro Arduino) ---------- */
+let simOn=false;const SN=64,led=[],SC=['#3ddcff','#ff4f9a'];
+const sm={run:false,level:1,player:0,mode:0,target:0,width:5,hold:400,cur:32,since:0,flash:0,fp:0};
+for(let i=0;i<SN;i++){const e=document.createElement('i');$('strip').appendChild(e);led.push(e);}
+function simNew(){sm.width=Math.max(2,10-(sm.level-1));sm.hold=Math.max(300,1000-(sm.level-1)*80);
+  sm.target=Math.floor(Math.random()*(SN-sm.width+1));sm.since=0;}
+function simCmd(c){c=c.trim().toUpperCase();
+  if(c==='START'){sm.run=true;sm.player=0;sm.level=1;simNew();}
+  else if(c==='END'){sm.run=false;}
+  else if(c.startsWith('LEVEL')){sm.level=Math.min(10,Math.max(1,parseInt(c.slice(5))||1));simNew();}
+  else if(c.startsWith('MODE')){sm.mode=c.includes('VERSUS')?1:c.includes('COOP')?2:0;}}
+setInterval(()=>{
+  if(!simOn)return;
+  const deg=+$('tilt').value;$('deg').textContent=deg+'°';
+  sm.cur=sm.cur*0.7+((deg+30)/60*(SN-1))*0.3;const c=Math.round(sm.cur),now=Date.now();
+  led.forEach(e=>e.style.background='#2a2f37');
+  if(sm.flash>now){led.forEach(e=>e.style.background=SC[sm.fp]);return;}
+  if(sm.run){
+    for(let i=sm.target;i<sm.target+sm.width;i++)led[i].style.background=SC[sm.player];
+    led[c].style.background='#fff';
+    if(c>=sm.target&&c<sm.target+sm.width){
+      if(!sm.since)sm.since=now;
+      if(now-sm.since>=sm.hold){const p=sm.mode===0?0:sm.player; // = "HIT p+1" z Arduina
+        sm.fp=sm.player;sm.flash=now+150;if(sm.mode!==0)sm.player=1-sm.player;simNew();hit(p);}
+    }else sm.since=0;
+  }else led[c].style.background='#1D9E75';
+},30);
+$('simbtn').onclick=()=>{simOn=!simOn;$('sim').style.display=simOn?'block':'none';$('simbtn').classList.toggle('on',simOn);
+  status(simOn?'Simulovaná tyč zapnutá. Hýbej posuvníkem a zmáčkni Start.':'Simulace vypnuta.');};
+
+/* ---------- ovládání ---------- */
+$('conn').onclick=connect;
+$('start').onclick=startGame;
+document.querySelectorAll('.mode').forEach(b=>b.onclick=()=>{
+  if(running)return;mode=b.dataset.m;
+  document.querySelectorAll('.mode').forEach(x=>x.classList.toggle('on',x===b));
+  ui();status('Režim: '+NAMES[mode]);});
+document.addEventListener('keydown',e=>{if(e.key==='1')hit(0);if(e.key==='2')hit(1);}); // simulace bez Arduina
+render();ui();
+</script>
+</body>
+</html>
