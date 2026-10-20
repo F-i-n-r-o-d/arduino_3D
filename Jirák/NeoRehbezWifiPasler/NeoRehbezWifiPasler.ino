@@ -10,6 +10,7 @@ int i;
 int randNumber;
 int citac = 0; // Počítadlo času stráveného v cíli
 float x, y, z; // Proměnné pro ukládání hodnot zrychlení/náklonu
+int vyhry = 0;
 int citacCil = 50;
 int zoneSize = 10;
 char ssid[] = "RP2040";        // your network SSID (name)
@@ -109,6 +110,8 @@ if(citac>citacCil) {
 
   randNumber = random(0, 49);
   citac = 0;
+}
+delay(10);
 }
 
 // převodník intervalu z in_min až in_max na out_min až out_max
