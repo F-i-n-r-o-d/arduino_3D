@@ -1,16 +1,31 @@
 // LED hra - Arduino Nano RP2040 Connect + LED pásek (64 diod na D4) + vestavěný LSM6DSOX
-// Základ: původní kód (náklon -> červená dioda, zelená cílová zóna), rozšířený o hru.
+// Komunikace se stránkou: USB (Serial 115200) NEBO WiFi (HTTP + Server-Sent Events, port 80)
 //
-// Komunikace s webovou stránkou přes USB (Serial 115200):
 //   Arduino -> stránka:  HIT 1 / HIT 2          (trefa hráče 1 / 2)
 //   stránka -> Arduino:  START, END, LEVEL n, MODE solo|versus|coop
+//
+// WiFi:  GET /events          -> stálé spojení, Arduino posílá "HIT n"
+//        GET /cmd?c=START     -> příkaz (mezera = %20)
+// Po připojení vypíše IP adresu do Serial monitoru.
 
+#include <WiFiNINA.h>          // WiFi čip na Nano RP2040 Connect
 #include <NeoPixelConnect.h>   // knihovna pro led pásek
 #include <Arduino_LSM6DSOX.h>  // knihovna pro čtení náklonu
+
+// ====== NASTAV SVOJI WIFI (2,4 GHz) ======
+const char WIFI_SSID[] = "NAZEV_WIFI";
+const char WIFI_PASS[] = "HESLO_WIFI";
+// Pevná IP (volitelné, aby se neměnila) - odkomentuj a uprav podle své sítě:
+// IPAddress STATIC_IP(192, 168, 1, 50);
+// ==========================================
 
 #define NUM_LEDS 64            // délka pásku
 
 NeoPixelConnect np(4, NUM_LEDS, pio0, 0);   // pásek na digitálním pinu D4
+WiFiServer server(80);
+WiFiClient sse;                              // klient odebírající události (stránka)
+unsigned long lastKeepAlive = 0;
+unsigned long lastWifiTry = 0;
 
 // barvy cílové zóny: hráč 1 = zelená, hráč 2 = fialová
 const uint8_t ZR[2] = {0, 40};
@@ -27,7 +42,7 @@ unsigned long holdMs = 1000;   // jak dlouho je potřeba vydržet v zóně
 unsigned long onSince = 0;     // od kdy je tečka v zóně (0 = není)
 float x, y, z;             // hodnoty zrychlení/náklonu
 float cursorPos = 32;      // vyhlazená poloha červené diody
-String line;               // příkaz přicházející z počítače
+String line;               // příkaz přicházející z počítače přes USB
 
 // nová náhodná zóna podle levelu
 void newTarget() {
@@ -56,6 +71,92 @@ void handleCommand(String s) {
   }
 }
 
+// odeslání trefy: USB i WiFi
+void sendHit(int p) {
+  Serial.print("HIT ");
+  Serial.println(p);
+  if (sse && sse.connected()) {
+    sse.print("data: HIT ");
+    sse.print(p);
+    sse.print("\n\n");
+  }
+}
+
+// ---------- WiFi ----------
+bool connectWifi(unsigned long timeoutMs) {
+  np.neoPixelSetValue(0, 60, 40, 0, true);      // žlutá dioda = připojuji
+#ifdef STATIC_IP
+  WiFi.config(STATIC_IP);
+#endif
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < timeoutMs) delay(250);
+  np.neoPixelFill(0, 0, 0, true);
+  if (WiFi.status() == WL_CONNECTED) {
+    server.begin();
+    Serial.print("WiFi OK, IP: ");
+    Serial.println(WiFi.localIP());
+    np.neoPixelFill(0, 40, 0, true); delay(300);   // zelený záblesk = připojeno
+    return true;
+  }
+  Serial.println("WiFi se nepodarilo pripojit (hra funguje pres USB).");
+  np.neoPixelFill(60, 0, 0, true); delay(300);     // červený záblesk = chyba
+  return false;
+}
+
+String urlDecode(const String &s) {
+  String r;
+  for (unsigned int i = 0; i < s.length(); i++) {
+    char c = s[i];
+    if (c == '+') r += ' ';
+    else if (c == '%' && i + 2 < s.length()) {
+      r += (char) strtol(s.substring(i + 1, i + 3).c_str(), NULL, 16);
+      i += 2;
+    } else r += c;
+  }
+  return r;
+}
+
+void handleHttp() {
+  WiFiClient client = server.available();
+  if (!client) return;
+
+  // načti první řádek požadavku (max ~200 ms)
+  String req;
+  unsigned long t0 = millis();
+  while (client.connected() && millis() - t0 < 200) {
+    if (client.available()) {
+      char c = client.read();
+      if (c == '\n') break;
+      if (c != '\r' && req.length() < 160) req += c;
+    }
+  }
+
+  const char *cors = "Access-Control-Allow-Origin: *\r\n";
+  if (req.startsWith("GET /events")) {
+    if (sse && sse.connected()) sse.stop();     // jen jedna stránka najednou
+    client.print("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
+                 "Cache-Control: no-cache\r\nConnection: keep-alive\r\n");
+    client.print(cors);
+    client.print("\r\nretry: 2000\n\n");
+    sse = client;                               // spojení necháme otevřené
+    lastKeepAlive = millis();
+    return;
+  }
+
+  if (req.startsWith("GET /cmd?c=")) {
+    int a = req.indexOf("c=") + 2;
+    int b = req.indexOf(' ', a);
+    if (b < 0) b = req.length();
+    handleCommand(urlDecode(req.substring(a, b)));
+  }
+  // odpověď (i pro OPTIONS a neznámé požadavky)
+  client.print("HTTP/1.1 200 OK\r\n");
+  client.print(cors);
+  client.print("Access-Control-Allow-Headers: *\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK");
+  client.stop();
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -63,12 +164,28 @@ void setup() {
     Serial.println("Failed to initialize IMU!");
     while (1);
   }
+  if (WiFi.status() == WL_NO_MODULE) {
+    Serial.println("WiFi modul nenalezen!");
+  } else {
+    connectWifi(15000);
+  }
   randomSeed(analogRead(A0));
   newTarget();
 }
 
 void loop() {
-  // 1) příkazy ze stránky
+  // 0) WiFi: případné znovupřipojení a obsluha požadavků
+  if (WiFi.status() != WL_CONNECTED) {
+    if (millis() - lastWifiTry > 20000) { lastWifiTry = millis(); connectWifi(5000); }
+  } else {
+    handleHttp();
+    if (sse && sse.connected() && millis() - lastKeepAlive > 10000) {
+      sse.print(": ping\n\n");                  // udržuje spojení při životě
+      lastKeepAlive = millis();
+    }
+  }
+
+  // 1) příkazy ze stránky přes USB
   while (Serial.available()) {
     char c = Serial.read();
     if (c == '\n') { handleCommand(line); line = ""; }
@@ -97,8 +214,7 @@ void loop() {
     if (hodnota >= target && hodnota < target + width) {
       if (onSince == 0) onSince = millis();
       if (millis() - onSince >= holdMs) {
-        Serial.print("HIT ");
-        Serial.println(mode == 0 ? 1 : player + 1);
+        sendHit(mode == 0 ? 1 : player + 1);
         np.neoPixelFill(ZR[player] * 3, ZG[player] * 3, ZB[player] * 3, true);   // zábleskem potvrdí trefu
         delay(150);
         if (mode != 0) player = 1 - player;      // ve dvou se hráči střídají
