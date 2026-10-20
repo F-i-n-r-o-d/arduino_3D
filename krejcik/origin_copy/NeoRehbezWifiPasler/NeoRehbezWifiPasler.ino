@@ -30,30 +30,15 @@ void setup(){
     Serial.println("Failed to initialize IMU!");
     while (1);
   }
-
-  Serial.print("Accelerometer sample rate = ");
-  Serial.print(IMU.accelerationSampleRate() + "Hz");
-  Serial.println();
-
  
   randNumber = random(0, 49); // Vygeneruje první náhodnou pozici cíle (od LED 0 do max 49, aby se zóna o šířce 10 LED vešla do rozsahu 64)
 
   // wait 10 seconds for connection:
   delay(1000);
 
-  
 }
 
 void loop(){
-  /*
-  if (IMU.accelerationAvailable()) {
-    IMU.readAcceleration(x, y, z); // načte aktuální náklon
-
-    Serial.println("Accelerometer data: ");
-    Serial.print(Ax);
-    Serial.println();
-  }
-  */
 
   int hodnota = mapFloat(x, -0.5, 0.5, 0, 63); // převede náklon v ose X (rozsah -0.5 g až +0.5 g) na index diody (0 až 63) => vrátí index v rozsahu 0-63 pro daný náklon x, odpovídá - 30 stupňů až +30 stupňů náklonu
 
