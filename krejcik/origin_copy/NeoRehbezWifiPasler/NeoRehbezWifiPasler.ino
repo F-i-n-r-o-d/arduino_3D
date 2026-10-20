@@ -46,7 +46,8 @@ void setup(){
   
 }
 
-void loop(){  
+void loop(){
+  /*
   if (IMU.accelerationAvailable()) {
     IMU.readAcceleration(x, y, z); // načte aktuální náklon
 
@@ -54,6 +55,7 @@ void loop(){
     Serial.print(Ax);
     Serial.println();
   }
+  */
 
   int hodnota = mapFloat(x, -0.5, 0.5, 0, 63); // převede náklon v ose X (rozsah -0.5 g až +0.5 g) na index diody (0 až 63) => vrátí index v rozsahu 0-63 pro daný náklon x, odpovídá - 30 stupňů až +30 stupňů náklonu
 
