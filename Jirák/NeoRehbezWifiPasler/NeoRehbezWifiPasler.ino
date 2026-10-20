@@ -10,6 +10,8 @@ int i;
 int randNumber;
 int citac = 0;  // Počítadlo času stráveného v cíli
 int vyhry = 0; // přidáno
+int zoneSize = 10;   // velikost zelené zóny (počet LED)
+int citacCil = 50;   // kolik cyklů musíš vydržet v cíli
 float x, y, z; // Proměnné pro ukládání hodnot zrychlení/náklonu
 char ssid[] = "RP2040";        // your network SSID (name)
 char pass[] = "ArduinoWeb";    // your network password (use for WPA, or use as key for WEP)
@@ -65,36 +67,35 @@ void loop(){
   for(int i=0;i<64;i++)
   {
     if(i==hodnota) np.neoPixelSetValue((uint8_t)i,120,0,0,true); // když se daný index rovná indexu vypočítanému z náklonu, daná dioda se vykreslí červeně
-    else if(i>=randNumber && i< randNumber+10) np.neoPixelSetValue((uint8_t)i,0,20,0,true); // rozsah o velikosti 10 daný náhodným číslem  se vykreslí zeleně
+    else if(i>=randNumber && i< randNumber+zoneSize) np.neoPixelSetValue((uint8_t)i,0,20,0,true); // rozsah o velikosti 10 daný náhodným číslem  se vykreslí zeleně
     else np.neoPixelSetValue((uint8_t)i,0,0,20,true); // zbytek modře
   }
  
-  if(hodnota>=randNumber && hodnota< randNumber+10){
+  if(hodnota>=randNumber && hodnota< randNumber+zoneSize){
 citac++; // pokud je při tomto průchodu cyklem kulička v daném rozsahu, přičtě se hodnota čítače
   } else {
     citac = 0;
   }
 
-  if(citac>50) { // splnění úkolu: 25 * delay 10ms => 2,5s
-      vyhry++; 
-      Serial.print("Vyhra! Celkem: "); //nově přidané 
-      Serial.println(vyhry);
-    randNumber = random(0, 49); // vygenerování nového rozsahu
-    citac = 0; // vynulování čítače
+if(citac>citacCil) {
+  vyhry++;
+  Serial.print("Vyhra! Celkem: ");
+  Serial.println(vyhry);
 
+  if (vyhry >= 5){
+    zoneSize = 5;
+    citacCil = 100;
+    if (vyhry == 5) Serial.println("Ztizeno! Uroven 2: zona 5 LED, cas 100");
   }
 
-  if (vyhry>=5){
-
+  if (vyhry >= 10){
+    zoneSize = 2;
+    citacCil = 150;
+    if (vyhry == 10) Serial.println("Ztizeno! Uroven 3: zona 2 LED, cas 150");
   }
-  
-  if (vyhry>=10){
-      
-  }
- 
 
-  delay(10);
-   
+  randNumber = random(0, 49);
+  citac = 0;
 }
 
 
