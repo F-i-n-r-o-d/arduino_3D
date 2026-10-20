@@ -7,6 +7,12 @@
 
 NeoPixelConnect np(4, MAXIMUM_NUM_NEOPIXELS, pio0, 0);
 
+// Nastavení náhodného pohybu kuličky
+unsigned long intervalPohybu = 1000; // čas v ms
+unsigned long posledniPohyb = 0;
+
+int polohaKulicky = 0;  // poloha kuličky 0–63
+
 int randNumber;
 int citac = 0;
 float x, y, z;
@@ -22,6 +28,10 @@ int mapFloat(float val, float in_min, float in_max, int out_min, int out_max) {
 void setup() {
   Serial.begin(115200);
   delay(1500);
+
+  randomSeed(analogRead(A0));
+  randNumber = random(0, 54);
+  polohaKulicky = 0;
 
   if (!IMU.begin()) {
     Serial.println("Chyba IMU!");
@@ -53,9 +63,27 @@ void loop() {
   if (hodnota > 63) hodnota = 63;
   if (hodnota < 0) hodnota = 0;
 
+  // Náhodný pohyb kuličky každých X milisekund
+  unsigned long aktualniCas = millis();
+
+  if (aktualniCas - posledniPohyb >= intervalPohybu) {
+    posledniPohyb = aktualniCas;
+
+    // Náhodně doleva (-1) nebo doprava (+1)
+    if (random(0, 2) == 0) {
+      polohaKulicky--;
+    } else {
+      polohaKulicky++;
+    }
+
+    // Kulička zůstane v rozsahu 0–63
+    if (polohaKulicky < 0) polohaKulicky = 0;
+    if (polohaKulicky > 63) polohaKulicky = 63;
+  }
+
   // 2. Vykresleni fyzickeho LED pasku
   for (int i = 0; i < 64; i++) {
-    if (i == hodnota) {
+    if (i == polohaKulicky) {
       np.neoPixelSetValue((uint8_t)i, 120, 0, 0, true);   // Cervena kulicka
     } else if (i >= randNumber && i < randNumber + 10) {
       np.neoPixelSetValue((uint8_t)i, 20, 20, 0, true);   // Zluty cil
@@ -65,7 +93,7 @@ void loop() {
   }
 
   // 3. Herni logika
-  if (hodnota >= randNumber && hodnota < randNumber + 10) citac++;
+  if (polohaKulicky >= randNumber && polohaKulicky < randNumber + 10) citac++;
   if (citac > 25) {
     randNumber = random(0, 54);
     citac = 0;
@@ -93,7 +121,7 @@ void loop() {
               client.print(x, 2); client.print(",");
               client.print(y, 2); client.print(",");
               client.print(z, 2); client.print(",");
-              client.print(hodnota); client.print(",");
+              client.print(polohaKulicky); client.print(",");
               client.println(randNumber);
             } else {
               // Kompletni HTML stranka s grafickym rozhranim
@@ -116,8 +144,17 @@ void loop() {
               client.println(F("<div class='card'><p>Náklon X: <br><b id='valX'>0.00</b> g</p></div>"));
               client.println(F("<div class='card'><p>Poloha diody: <br><b id='valD'>0</b> / 63</p></div>"));
 
+              client.println(F("<div class='card'>"));
+              client.println(F("<p>Interval pohybu kuličky:</p>"));
+              client.println(F("<input type='range' id='intervalSlider' min='300' max='3000' value='500' step='100' style='width:300px;'>"));
+              client.println(F("<p><b id='intervalValue'>500</b> ms</p>"));
+              client.println(F("</div>"));
+
               client.println(F("<script>"));
               client.println(F("function loopData(){"));
+              client.println(F("document.getElementById('intervalSlider').addEventListener('input', function() {"));
+              client.println(F("  document.getElementById('intervalValue').innerText = this.value;"));
+              client.println(F("});"));
               client.println(F("  fetch('/data').then(r=>r.text()).then(txt=>{"));
               client.println(F("    let d = txt.split(',');"));
               client.println(F("    document.getElementById('valX').innerText = d[0];"));
