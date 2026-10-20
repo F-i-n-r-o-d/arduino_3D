@@ -17,7 +17,9 @@ const unsigned long LIGHT_STEP_MS = 500;
 const unsigned long RANDOM_DELAY_MIN_MS = 500;
 const unsigned long RANDOM_DELAY_MAX_MS = 5000;
 const unsigned long RESULT_HOLD_MS = 2500;
-const float JERK_THRESHOLD = 0.45f;
+const float JERK_THRESHOLD = 0.55f;
+const float JERK_PEAK_MIN = 1.55f;
+const unsigned long JERK_COOLDOWN_MS = 450;
 
 const uint8_t HISTORY_SIZE = 8;
 
@@ -36,8 +38,9 @@ unsigned long phaseStartMs = 0;
 unsigned long randomHoldMs = 0;
 unsigned long reactionStartMs = 0;
 unsigned long reactionTimeMs = 0;
-float prevMag = 1.0f;
+float restMag = 1.0f;
 bool imuReady = false;
+unsigned long jerkIgnoreUntilMs = 0;
 
 unsigned long lastValidMs = 0;
 unsigned long bestMs = 0;
@@ -70,25 +73,39 @@ void showLights(uint8_t count) {
   np.neoPixelShow();
 }
 
-float readAccelMagnitude() {
-  float ax, ay, az;
-  if (!IMU.accelerationAvailable()) {
-    return prevMag;
-  }
-  IMU.readAcceleration(ax, ay, az);
-  return sqrt(ax * ax + ay * ay + az * az);
+void armJerkCooldown() {
+  imuReady = false;
+  jerkIgnoreUntilMs = millis() + JERK_COOLDOWN_MS;
 }
 
 bool detectJerk() {
-  float mag = readAccelMagnitude();
-  float delta = fabs(mag - prevMag);
-  prevMag = mag;
+  float ax, ay, az;
+  if (!IMU.accelerationAvailable()) {
+    return false;
+  }
+  IMU.readAcceleration(ax, ay, az);
+
+  float mag = sqrt(ax * ax + ay * ay + az * az);
 
   if (!imuReady) {
+    restMag = mag;
     imuReady = true;
     return false;
   }
-  return delta >= JERK_THRESHOLD;
+
+  if (millis() < jerkIgnoreUntilMs) {
+    restMag = 0.85f * restMag + 0.15f * mag;
+    return false;
+  }
+
+  float deviation = fabs(mag - restMag);
+  bool jerked = (deviation >= JERK_THRESHOLD) || (mag >= JERK_PEAK_MIN);
+
+  if (!jerked) {
+    restMag = 0.90f * restMag + 0.10f * mag;
+  }
+
+  return jerked;
 }
 
 void recordValidResult(unsigned long ms) {
@@ -114,8 +131,7 @@ void resetTrialToStart() {
   lightsOn = 0;
   randomHoldMs = 0;
   reactionTimeMs = 0;
-  imuReady = false;
-  prevMag = readAccelMagnitude();
+  armJerkCooldown();
   phase = PHASE_START;
   phaseStartMs = millis();
   Serial.println();
@@ -127,8 +143,7 @@ void startLighting() {
   lightsOn = 0;
   randomHoldMs = 0;
   reactionTimeMs = 0;
-  imuReady = false;
-  prevMag = readAccelMagnitude();
+  armJerkCooldown();
   phase = PHASE_LIGHTING;
   phaseStartMs = millis();
   Serial.println();
@@ -288,7 +303,7 @@ void setup() {
   randomSeed((unsigned long)(micros() ^ (unsigned long)(ax * 1000) ^ (unsigned long)(ay * 1000)));
 
   allLightsOff();
-  prevMag = readAccelMagnitude();
+  armJerkCooldown();
   phase = PHASE_START;
   phaseStartMs = millis();
   Serial.println(F(">>> Škubnutím spusť první pokus."));
@@ -350,7 +365,7 @@ void loop() {
         reactionStartMs = millis();
         phase = PHASE_MEASURE;
         imuReady = false;
-        prevMag = readAccelMagnitude();
+        jerkIgnoreUntilMs = millis() + 80;
         Serial.println(F("ZHASNUTO! Škubni co nejdřív..."));
       }
       break;
