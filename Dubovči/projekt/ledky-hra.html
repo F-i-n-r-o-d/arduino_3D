@@ -39,6 +39,7 @@ small{color:var(--mut)}
 
 <div class="bar">
   <button id="conn">Připojit Arduino (USB)</button>
+  <button id="wifi">Připojit Arduino (WiFi)</button>
   <button class="mode on" data-m="solo">Sólo</button>
   <button class="mode" data-m="versus">Proti sobě</button>
   <button class="mode" data-m="coop">Spolu</button>
@@ -61,7 +62,7 @@ small{color:var(--mut)}
 
 <h3>Tabulka rekordů</h3>
 <table><thead><tr><th>Režim</th><th>Skóre</th><th>Datum</th></tr></thead><tbody id="tb"></tbody></table>
-<p><small>Arduino posílá po USB (115200) řádky <code>HIT 1</code> nebo <code>HIT 2</code>. Stránka posílá <code>START</code>, <code>LEVEL n</code> a <code>END</code>.</small></p>
+<p><small>Arduino posílá po USB (115200) nebo přes WiFi řádky <code>HIT 1</code> nebo <code>HIT 2</code>. Stránka posílá <code>MODE</code>, <code>START</code>, <code>LEVEL n</code> a <code>END</code>.</small></p>
 
 <script>
 const DUR=30, PER_LEVEL=5, MAXLV=10, KEY='ledky-rekordy';
@@ -99,7 +100,10 @@ function ui(){
   $('l1').textContent=lvl[0];$('l2').textContent=lvl[1];
   $('t1').textContent=$('t2').textContent=left;
   $('c2').classList.toggle('off',mode==='solo');}
-function send(s){if(simOn)simCmd(s);if(writer)writer.write(new TextEncoder().encode(s+'\n')).catch(()=>{});}
+let wifiBase=null,es=null,wq=Promise.resolve();
+function send(s){if(simOn)simCmd(s);if(writer)writer.write(new TextEncoder().encode(s+'\n')).catch(()=>{});
+  if(wifiBase){const u=wifiBase+'/cmd?c='+encodeURIComponent(s); // fronta kvůli pořadí příkazů
+    wq=wq.then(()=>fetch(u).catch(()=>{}));}}
 function startGame(){
   A().resume();score=[0,0];lvl=[1,1];left=DUR;running=true;$('rec').style.display='none';
   send('MODE '+mode);send('START');send('LEVEL 1');ui();
@@ -141,6 +145,22 @@ async function readLoop(){
   catch(e){}
   $('conn').textContent='Připojit Arduino (USB)';$('conn').classList.remove('on');writer=null;status('Arduino odpojeno.');}
 
+/* ---------- Arduino přes WiFi (HTTP + Server-Sent Events) ---------- */
+function wifiOff(){if(es)es.close();es=null;wifiBase=null;$('wifi').textContent='Připojit Arduino (WiFi)';$('wifi').classList.remove('on');}
+function connectWifi(){
+  if(es){wifiOff();status('WiFi odpojeno.');return;}
+  const ip=(prompt('IP adresa Arduina (vypíše ji Serial monitor po připojení k WiFi):',localStorage.getItem('ledky-ip')||'')||'').trim();
+  if(!ip)return;
+  try{localStorage.setItem('ledky-ip',ip)}catch(e){}
+  wifiBase='http://'+ip;status('Připojuji se k '+ip+' …');
+  es=new EventSource(wifiBase+'/events');
+  es.onopen=()=>{$('wifi').textContent='Arduino připojeno (WiFi)';$('wifi').classList.add('on');status('Arduino připojeno přes WiFi. Zmáčkni Start.');};
+  es.onmessage=e=>{if(writer)return; // pokud je zároveň USB, počítej trefy jen z něj
+    const m=/^HIT\s*([12])$/i.exec(e.data.trim());if(m)hit(+m[1]-1);};
+  es.onerror=()=>{if(es&&es.readyState===2){wifiOff();status('WiFi spojení selhalo. Zkontroluj IP adresu a že jsi ve stejné síti.');}
+    else if(es){$('wifi').textContent='WiFi: obnovuji spojení…';$('wifi').classList.remove('on');}};
+}
+
 /* ---------- simulovaná tyč (stejná logika jako skica pro Arduino) ---------- */
 let simOn=false;const SN=64,led=[],SC=['#3ddcff','#ff4f9a'];
 const sm={run:false,level:1,player:0,mode:0,target:0,width:5,hold:400,cur:32,since:0,flash:0,fp:0};
@@ -173,6 +193,7 @@ $('simbtn').onclick=()=>{simOn=!simOn;$('sim').style.display=simOn?'block':'none
 
 /* ---------- ovládání ---------- */
 $('conn').onclick=connect;
+$('wifi').onclick=connectWifi;
 $('start').onclick=startGame;
 document.querySelectorAll('.mode').forEach(b=>b.onclick=()=>{
   if(running)return;mode=b.dataset.m;
