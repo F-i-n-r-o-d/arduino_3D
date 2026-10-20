@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rehabko Monitor – Terč</title>
+<style>
+:root{font-family:Segoe UI,Arial,sans-serif;color:#eee;background:#181818;color-scheme:dark}
+*{box-sizing:border-box}body{text-align:center;margin:0;padding:22px 12px}main{max-width:850px;margin:auto}h1{margin:10px 0 5px;font-size:clamp(24px,4vw,34px)}p{color:#aeb7c4}.panel{background:#21262d;border:1px solid #30363d;border-radius:12px;padding:20px;margin:16px 0}.status{font-size:13px;color:#9ba9bc;margin:4px 0 20px}.track{position:relative;display:grid;grid-template-columns:repeat(64,minmax(0,1fr));gap:2px;width:100%;height:50px;padding:5px;background:#0d1117;border:2px solid #30363d;border-radius:12px;margin:24px auto 30px}.led{border-radius:3px;background:#182b48;min-width:0}.led.p1{background:#299154}.led.p3{background:#d09a27}.led.p5{background:#ffe069}.led.ball{background:#fa5553!important;box-shadow:0 0 9px #ff5656;z-index:1}.legend{display:flex;gap:18px;justify-content:center;flex-wrap:wrap;font-size:13px;color:#bdc7d3}.dot{display:inline-block;width:12px;height:12px;margin-right:5px;border-radius:3px;vertical-align:middle}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.stat{background:#21262d;border:1px solid #30363d;border-radius:10px;padding:13px 6px;font-size:13px;color:#b9c3cf}.stat strong{display:block;font-size:27px;color:#58a6ff;margin:5px 0}progress{width:100%;height:16px;accent-color:#36b96e}.panel.progress-wrap{width:100%;max-width:560px;margin:24px auto}button{background:#2e7adb;border:0;border-radius:8px;padding:12px 19px;color:white;font-size:15px;cursor:pointer}button:hover{background:#428bed}button:focus-visible{outline:2px solid white}.controls{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin:16px}.hint{font-size:13px;color:#aeb7c4}.result{font-size:18px;font-weight:650;min-height:26px}.demo-only{display:none}body.demo .demo-only{display:block}@media(max-width:600px){.stats{grid-template-columns:repeat(2,1fr)}.track{gap:1px;height:42px;padding:3px}.panel{padding:12px}.stat strong{font-size:23px}}
+ .source-control{display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap;margin:20px 0 4px;font-size:13px;color:#aeb7c4}
+ .source-control input{background:#0d1117;color:#eee;border:1px solid #30363d;border-radius:8px;padding:10px 12px;width:170px;font:inherit}
+ .source-control button{font-size:13px;padding:10px 12px}
+ .source-help{font-size:12px;color:#9ba9bc;margin:5px 0 0}
+
+[hidden]{display:none!important}
+.game-controls{display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;margin:18px 0 12px}
+.game-controls strong{font-size:16px;color:#bdc7d3}
+button:disabled{opacity:.45;cursor:default}
+.game-message{font-size:13px;color:#ffe069;margin:0;min-height:0}
+.game-message:empty{display:none}
+.track.signal-start .led{background:#3eb9de!important;opacity:var(--signal-level);box-shadow:none}
+.track.signal-end .led{background:#ffe069!important;opacity:var(--signal-level);box-shadow:none}
+.track.signal-start{border-color:#3b7892}.track.signal-end{border-color:#9b8645}
+.final-score{display:block;font-size:clamp(34px,7vw,48px);color:#ffe069;margin:12px 0}
+.round-results{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:18px}
+.round-chip{font-size:12px;color:#bdc7d3;background:#18222e;border:1px solid #30363d;border-radius:6px;padding:7px 9px}
+.history-panel h2{font-size:22px;margin:4px 0 16px}
+.history-scroll{max-height:340px;overflow:auto}
+.history-table{width:100%;border-collapse:collapse;font-size:14px;text-align:left}
+.history-table th{color:#aeb7c4;font-weight:600}.history-table th,.history-table td{padding:12px 10px;border-bottom:1px solid #30363d}
+.history-table th:last-child,.history-table td:last-child{text-align:right}
+.history-table td:last-child{color:#58a6ff;font-weight:700;white-space:nowrap}
+@media(max-width:600px){.history-table th,.history-table td{padding:10px 5px;font-size:12px}.game-controls{gap:10px}}
+</style></head><body><main>
+<h1>Rehabilitační pomůcka – terč</h1><p>Čím přesněji udržíš červenou diodu ve středu, tím více bodů získáš.</p>
+<div class="status" id="mode">Načítám připojení…</div>
+<div class="game-controls"><strong id="gameStatus" role="status" aria-live="polite">Připraveno — hra na 10 terčů</strong><button type="button" id="startGame">Start hry</button></div>
+<p id="gameMessage" class="game-message" role="status"></p>
+<section class="panel"><div class="track" id="track" aria-label="LED pásek se 64 diodami"></div>
+<div class="legend"><span><i class="dot" style="background:#299154"></i>1 bod</span><span><i class="dot" style="background:#d09a27"></i>3 body</span><span><i class="dot" style="background:#ffe069"></i>5 bodů</span><span><i class="dot" style="background:#fa5553"></i>Aktuální poloha</span></div></section>
+<section class="stats"><div class="stat">Skóre<strong id="score">0 / 50</strong></div><div class="stat">Zásahy<strong id="hits">0 / 10</strong></div><div class="stat">Poloha diody<strong id="position">0 / 63</strong></div><div class="stat">Náklon X<strong id="tilt">0.00 g</strong></div></section>
+<section class="panel progress-wrap" id="holdPanel"><div id="zone" class="result">Najdi cílové pole</div><p>Vydrž v terči 2 sekundy</p><progress id="hold" max="2000" value="0"></progress><p id="holdText">0,0 / 2,0 s</p><div id="last">Poslední zásah: –</div></section>
+<section class="panel" id="finalResult" hidden aria-live="polite">
+<h2>Hra dokončena</h2><strong class="final-score" id="finalScore">0 / 50</strong>
+<p>Výsledek za všech 10 terčů. Maximum je 50 bodů.</p>
+<div class="round-results" id="roundResults" aria-label="Body za jednotlivé terče"></div>
+</section>
+<section class="panel demo-only"><h2>Zkušební režim bez Arduina</h2><p>Podrž šipky ← a → nebo použij tlačítka. Pohyb simuluje náklon tyče.</p><div class="controls"><button id="left" type="button">◀ Vlevo</button><button id="right" type="button">Vpravo ▶</button></div><p class="hint">Terče se po úspěšném dvousekundovém držení mění automaticky.</p></section>
+<section class="panel history-panel" aria-labelledby="historyTitle">
+<h2 id="historyTitle">Historie výsledků</h2>
+<p id="emptyHistory">Zatím nemáš žádnou dokončenou hru.</p>
+<div class="history-scroll"><table class="history-table" id="historyTable" hidden>
+<thead><tr><th scope="col">Dokončeno</th><th scope="col">Režim</th><th scope="col">Body</th></tr></thead>
+<tbody id="historyBody"></tbody></table></div>
+<p class="hint" id="historyNote"></p>
+</section>
+<div class="source-control">
+  <label for="deviceIp">IP adresa tyče:</label>
+  <input type="text" id="deviceIp" value="192.168.4.1" spellcheck="false" autocomplete="off" aria-label="Adresa Arduina">
+  <button id="connectDevice" type="button">Připojit k tyči</button>
+  <button id="useDemo" type="button">Zpět do simulace</button>
+</div>
+<p class="source-help" id="connectionHelp">Pokud tyč není připojená, můžeš pokračovat v simulaci.</p>
+</main><script>
+'use strict';
+// Pravidla jsou stejna v nahledu i ve firmware. V zivem rezimu pocita body Arduino.
+const LED_COUNT = 64, TARGET_WIDTH = 10, HOLD_MS = 2000;
+const TARGETS_PER_GAME = 10, MAX_SCORE = 50, SIGNAL_MS = 2400, IMU_STALE_MS = 500;
+const colors = [1, 1, 3, 3, 5, 5, 3, 3, 1, 1];
+const HISTORY_KEY = 'rehabko.history.ten-targets.v1', HISTORY_LIMIT = 100;
+const el = id => document.getElementById(id);
+const leds = Array.from({length: LED_COUNT}, () => {
+  const led = document.createElement('div');
+  led.className = 'led'; el('track').appendChild(led); return led;
+});
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const isLocalPreview = location.protocol === 'file:' ||
+  location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+let mode = isLocalPreview || new URLSearchParams(location.search).has('demo') ? 'demo' : 'live';
+let endpoint = '/data', version = 0, pendingRequest = null, pollTimer = 0;
+let commandBusy = false, connectionOk = false, lastSampleAt = 0, pendingStartId = '';
+let moving = 0, moveAccumulator = 0;
+let history = [], storageAvailable = true;
+const seenResults = new Set();
+
+function points(pos, target) {
+  const d = pos - target;
+  return d >= 0 && d < TARGET_WIDTH ? colors[d] : 0;
+}
+function nextTarget(old) {
+  let next = Math.floor(Math.random() * (LED_COUNT - TARGET_WIDTH + 1));
+  if (next === old) next = (next + 1) % (LED_COUNT - TARGET_WIDTH + 1);
+  return next;
+}
+function uniqueId() {
+  const bytes = new Uint8Array(16);
+  if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+function emptyState() {
+  return {api: 2, x: 0, pos: 31, target: nextTarget(-1), score: 0, hits: 0,
+    hold: 0, last: 0, imuAge: 0, phase: 'ready', phaseMs: 0, gameId: '',
+    roundPoints: Array(TARGETS_PER_GAME).fill(0), completed: null};
+}
+let demoState = emptyState(), state = demoState;
+let demoHolding = false;
+const total = values => values.reduce((a, b) => a + b, 0);
+const validId = id => typeof id === 'string' && /^[0-9a-f]{32}$/.test(id);
+const integerIn = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
+function validPoints(values, hits) {
+  return Array.isArray(values) && values.length === TARGETS_PER_GAME &&
+    values.every((v, i) => i < hits ? [1, 3, 5].includes(v) : v === 0);
+}
+function validHistoryRow(row) {
+  return row && typeof row === 'object' && validId(row.id) &&
+    ['demo', 'live'].includes(row.mode) && integerIn(row.score, 0, MAX_SCORE) &&
+    validPoints(row.points, TARGETS_PER_GAME) && total(row.points) === row.score &&
+    typeof row.date === 'string' && Number.isFinite(Date.parse(row.date));
+}
+function readHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter(validHistoryRow).slice(0, HISTORY_LIMIT) : [];
+  } catch (_) { storageAvailable = false; return []; }
+}
+function renderHistory() {
+  const body = el('historyBody'); body.replaceChildren();
+  el('emptyHistory').hidden = history.length > 0;
+  el('historyTable').hidden = history.length === 0;
+  for (const row of history) {
+    const tr = document.createElement('tr');
+    const values = [new Date(row.date).toLocaleString('cs-CZ'),
+      row.mode === 'demo' ? 'Simulace' : 'Tyč', row.score + ' / 50'];
+    for (const value of values) {
+      const td = document.createElement('td'); td.textContent = value; tr.appendChild(td);
+    }
+    body.appendChild(tr);
+  }
+  el('historyNote').textContent = storageAvailable
+    ? 'Posledních 100 dokončených her. Historie se ukládá v tomto prohlížeči pro tuto adresu stránky.'
+    : 'Prohlížeč nepovolil trvalé uložení. Nové výsledky zůstanou jen do zavření této stránky.';
+}
+function recordCompleted(result, sourceMode) {
+  if (!result || !validId(result.id)) return;
+  const key = sourceMode + ':' + result.id;
+  if (seenResults.has(key)) return;
+  // Pri znovunacteni stejne dokoncene hry nevytvaret druhy zaznam.
+  const latest = readHistory();
+  const merged = new Map([...latest, ...history].map(r => [r.mode + ':' + r.id, r]));
+  if (!merged.has(key)) {
+    const age = sourceMode === 'live' ? result.ageMs : 0;
+    merged.set(key, {id: result.id, mode: sourceMode, score: result.score,
+      points: [...result.points], date: new Date(Date.now() - age).toISOString()});
+    console.log('nejde ti to mrdko');
+  }
+  history = [...merged.values()].sort((a, b) => Date.parse(b.date) - Date.parse(a.date)).slice(0, HISTORY_LIMIT);
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); storageAvailable = true; }
+  catch (_) { storageAvailable = false; }
+  seenResults.add(key); renderHistory();
+}
+history = readHistory(); renderHistory();
+window.addEventListener('storage', e => {
+  if (e.key === HISTORY_KEY) { history = readHistory(); renderHistory(); }
+});
+function displayedPhaseMs(s, now) {
+  const extra = mode === 'live' && connectionOk ? Math.min(300, Math.max(0, now - lastSampleAt)) : 0;
+  return Math.min(SIGNAL_MS, s.phaseMs + extra);
+}
+function render(s, now = performance.now()) {
+  const ms = displayedPhaseMs(s, now);
+  const signal = s.phase === 'starting' && ms < SIGNAL_MS ? 'start' :
+    s.phase === 'finished' && ms < SIGNAL_MS ? 'end' : '';
+  el('track').className = 'track' + (signal ? ' signal-' + signal : '');
+  // Dva pozvolne pulzy za 2,4 sekundy, nikoli rychly stroboskop.
+  const t = (ms % 1200) / 600;
+  const pulse = t <= 1 ? t : 2 - t;
+  el('track').style.setProperty('--signal-level', String(reducedMotion.matches ? 0.7 : 0.24 + 0.65 * pulse));
+  for (let i = 0; i < LED_COUNT; i++) {
+    const pts = points(i, s.target);
+    const cls = 'led' + (pts ? ' p' + pts : '') + (i === s.pos ? ' ball' : '');
+    if (leds[i].className !== cls) leds[i].className = cls;
+  }
+  el('score').textContent = s.score + ' / 50';
+  el('hits').textContent = s.hits + ' / 10';
+  el('position').textContent = s.pos + ' / 63';
+  el('tilt').textContent = Number(s.x).toFixed(2) + ' g';
+  const zone = points(s.pos, s.target);
+  const status = s.phase === 'ready' ? 'Připraveno — hra na 10 terčů' :
+    s.phase === 'starting' ? 'Připrav se… hra za chvíli začne' :
+    s.phase === 'playing' ? 'Terč ' + (s.hits + 1) + ' / 10' : 'Hotovo — všech 10 terčů splněno';
+  if (el('gameStatus').textContent !== status) el('gameStatus').textContent = status;
+  el('zone').textContent = s.phase === 'ready' ? 'Spusť hru tlačítkem Start' :
+    s.phase === 'starting' ? 'Připrav se na první terč' :
+    s.phase === 'finished' ? 'Hra dokončena' :
+    zone ? 'Aktuálně: ' + zone + ' bodů' : 'Najdi cílové pole';
+  el('hold').value = s.phase === 'playing' ? s.hold : 0;
+  el('holdText').textContent = ((s.phase === 'playing' ? s.hold : 0) / 1000).toFixed(1).replace('.', ',') + ' / 2,0 s';
+  el('last').textContent = 'Poslední zásah: ' + (s.last ? s.last + ' bodů' : '–');
+  el('startGame').textContent = commandBusy ? 'Odesílám start…' : s.phase === 'finished' ? 'Další hra' : 'Start hry';
+  el('startGame').disabled = commandBusy || !['ready', 'finished'].includes(s.phase) ||
+    (s.phase === 'finished' && ms < SIGNAL_MS) ||
+    (mode === 'live' && (!connectionOk || s.imuAge > IMU_STALE_MS));
+  el('left').disabled = el('right').disabled = s.phase !== 'playing';
+  el('holdPanel').hidden = s.phase === 'finished';
+  el('finalResult').hidden = s.phase !== 'finished';
+  if (s.phase === 'finished') {
+    el('finalScore').textContent = s.score + ' / 50';
+    const key = mode + ':' + s.gameId;
+    if (el('roundResults').dataset.game !== key) {
+      el('roundResults').dataset.game = key; el('roundResults').replaceChildren();
+      s.roundPoints.forEach((p, i) => {
+        const chip = document.createElement('span');
+        chip.className = 'round-chip'; chip.textContent = (i + 1) + '. terč: ' + p;
+        el('roundResults').appendChild(chip);
+      });
+    }
+  }
+}
+function startDemoGame() {
+  if (!['ready', 'finished'].includes(demoState.phase)) return;
+  const pos = demoState.pos;
+  demoState = emptyState(); demoState.pos = pos; demoState.x = pos / 63 - 0.5;
+  demoState.gameId = uniqueId(); demoState.phase = 'starting';
+  demoHolding = false; moving = 0; moveAccumulator = 0;
+  state = demoState; el('gameMessage').textContent = ''; render(state);
+}
+function simulate(dt) {
+  if (demoState.phase === 'starting') {
+    demoState.phaseMs = Math.min(SIGNAL_MS, demoState.phaseMs + dt);
+    if (demoState.phaseMs >= SIGNAL_MS) { demoState.phase = 'playing'; demoState.phaseMs = 0; }
+    return; // Behem startovniho signalu se zadne drzeni ani body nepocitaji.
+  }
+  if (demoState.phase === 'finished') { demoState.phaseMs = Math.min(SIGNAL_MS, demoState.phaseMs + dt); return; }
+  if (demoState.phase !== 'playing') return;
+  const p = points(demoState.pos, demoState.target);
+  if (p) {
+    if (!demoHolding) { demoHolding = true; demoState.hold = 0; }
+    else demoState.hold += dt;
+    if (demoState.hold >= HOLD_MS) {
+      demoState.last = p; demoState.score += p;
+      demoState.roundPoints[demoState.hits++] = p;
+      demoState.hold = 0; demoHolding = false;
+      if (demoState.hits === TARGETS_PER_GAME) {
+        demoState.phase = 'finished'; demoState.phaseMs = 0; moving = 0;
+        demoState.completed = {id: demoState.gameId, score: demoState.score,
+          points: [...demoState.roundPoints], ageMs: 0};
+        recordCompleted(demoState.completed, 'demo');
+      } else demoState.target = nextTarget(demoState.target);
+    }
+  } else { demoState.hold = 0; demoHolding = false; }
+}
+function isTyping(target) { return target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)); }
+document.addEventListener('keydown', e => {
+  if (mode !== 'demo' || state.phase !== 'playing' || isTyping(e.target)) return;
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault(); moving = e.key === 'ArrowLeft' ? -1 : 1;
+  }
+});
+document.addEventListener('keyup', e => {
+  if ((e.key === 'ArrowLeft' && moving === -1) || (e.key === 'ArrowRight' && moving === 1)) moving = 0;
+});
+window.addEventListener('blur', () => { moving = 0; moveAccumulator = 0; });
+document.addEventListener('visibilitychange', () => {
+  moving = 0; moveAccumulator = 0;
+  if (mode === 'demo') { demoHolding = false; demoState.hold = 0; }
+});
+for (const [id, dir] of [['left', -1], ['right', 1]]) {
+  const b = el(id);
+  b.addEventListener('pointerdown', e => {
+    if (mode !== 'demo' || state.phase !== 'playing') return;
+    e.preventDefault(); moving = dir; b.setPointerCapture(e.pointerId);
+  });
+  for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(name, () => { moving = 0; });
+}
+let previous = performance.now();
+function animationFrame(now) {
+  const dt = Math.max(0, Math.min(100, now - previous)); previous = now;
+  if (mode === 'demo' && !document.hidden) {
+    if (moving && state.phase === 'playing') {
+      moveAccumulator += dt;
+      while (moveAccumulator >= 45) {
+        demoState.pos = Math.max(0, Math.min(63, demoState.pos + moving)); moveAccumulator -= 45;
+        // Kazdy opusteny cil prerusi drzeni i pri vice krocich v jednom snimku.
+        if (!points(demoState.pos, demoState.target)) { demoState.hold = 0; demoHolding = false; }
+      }
+    } else moveAccumulator = 0;
+    demoState.x = demoState.pos / 63 - 0.5;
+    simulate(dt); state = demoState;
+  }
+  render(state, now); requestAnimationFrame(animationFrame);
+}
+function showMode() {
+  document.body.classList.toggle('demo', mode === 'demo');
+  el('mode').textContent = mode === 'demo' ? 'DEMO – bez připojeného Arduina' : 'Připojuji se k Arduinu…';
+  el('connectionHelp').textContent = mode === 'demo'
+    ? 'Šipkami ovládáš simulaci. Skutečná tyč nyní data neposílá do této stránky.'
+    : 'Pro živá data musí být počítač připojený k Wi-Fi RP2040.';
+}
+function cancelNetwork() {
+  version++; clearTimeout(pollTimer);
+  if (pendingRequest) pendingRequest.abort();
+  pendingRequest = null; commandBusy = false; connectionOk = false;
+}
+function switchToDemo() {
+  cancelNetwork(); mode = 'demo'; moving = 0; moveAccumulator = 0;
+  state = demoState; el('gameMessage').textContent = ''; showMode(); render(state);
+}
+function parseTelemetry(text) {
+  let s;
+  try { s = JSON.parse(text); } catch (_) { throw Error('Arduino nemá nový formát dat. Nahraj i nový WebSocketVirtualLed.ino.'); }
+  if (!s || s.api !== 2 || !Number.isFinite(s.x) || !integerIn(s.pos, 0, 63) ||
+      !integerIn(s.target, 0, 54) || !integerIn(s.score, 0, MAX_SCORE) ||
+      !integerIn(s.hits, 0, TARGETS_PER_GAME) || !integerIn(s.hold, 0, HOLD_MS) ||
+      !integerIn(s.imuAge, 0, 4294967295) || !integerIn(s.phaseMs, 0, SIGNAL_MS) ||
+      !['ready', 'starting', 'playing', 'finished'].includes(s.phase) ||
+      !validPoints(s.roundPoints, s.hits) || total(s.roundPoints) !== s.score ||
+      s.last !== (s.hits ? s.roundPoints[s.hits - 1] : 0) ||
+      (s.phase === 'ready' ? s.gameId !== '' : !validId(s.gameId)) ||
+      (['ready', 'starting'].includes(s.phase) && s.hits !== 0) ||
+      (s.phase === 'finished' ? s.hits !== TARGETS_PER_GAME : s.hits >= TARGETS_PER_GAME)) {
+    throw Error('Neplatná data z Arduina. Použij odpovídající verzi .ino i náhledu.');
+  }
+  if (s.completed !== null && (!s.completed || !validId(s.completed.id) ||
+      !validPoints(s.completed.points, TARGETS_PER_GAME) ||
+      s.completed.score !== total(s.completed.points) ||
+      !integerIn(s.completed.ageMs, 0, 4294967295))) throw Error('Neplatný dokončený výsledek.');
+  return s;
+}
+function acceptSample(sample) {
+  state = sample; lastSampleAt = performance.now(); connectionOk = true;
+  if (pendingStartId === sample.gameId) pendingStartId = '';
+  recordCompleted(sample.completed, 'live'); render(state);
+  el('mode').textContent = sample.imuAge > IMU_STALE_MS
+    ? 'Arduino připojeno, ale akcelerometr neposílá nové hodnoty'
+    : 'Živý režim – připojeno k Arduinu';
+  el('connectionHelp').textContent = sample.imuAge > IMU_STALE_MS
+    ? 'Dokud nepřijdou nová data z čidla, držení se nezapočítává.'
+    : 'Polohu diody, terč, průběh hry i body určuje skutečná tyč.';
+}
+async function request(url, method, currentVersion) {
+  const controller = new AbortController(); pendingRequest = controller;
+  const timeout = setTimeout(() => controller.abort(), 3000);
+  try {
+    const response = await fetch(url, {method, cache: 'no-store', signal: controller.signal});
+    if (!response.ok) {
+      if (response.status === 409) throw Error('Na tyči už hra probíhá nebo ještě dobíhá závěrečný signál.');
+      if (response.status === 503) throw Error('Akcelerometr neposílá aktuální data.');
+      throw Error('HTTP ' + response.status + ' — zkontroluj verzi programu v Arduinu.');
+    }
+    const sample = parseTelemetry(await response.text());
+    if (mode === 'live' && currentVersion === version) acceptSample(sample);
+  } finally {
+    clearTimeout(timeout); if (pendingRequest === controller) pendingRequest = null;
+  }
+}
+async function pollData(currentVersion) {
+  if (mode !== 'live' || currentVersion !== version) return;
+  try { await request(endpoint, 'GET', currentVersion); }
+  catch (err) {
+    if (mode === 'live' && currentVersion === version) {
+      connectionOk = false; el('mode').textContent = 'Nelze načíst živá data z tyče';
+      el('connectionHelp').textContent = (err.name === 'AbortError' ? 'Vypršel čas připojení.' : err.message) +
+        ' Zkontroluj Wi-Fi RP2040 a IP adresu. Nejspolehlivější je otevřít web přímo z Arduina.';
+    }
+  } finally {
+    if (mode === 'live' && currentVersion === version) pollTimer = setTimeout(() => pollData(currentVersion), 140);
+  }
+}
+function startLive(url) {
+  cancelNetwork(); mode = 'live'; endpoint = url; pendingStartId = '';
+  moving = 0; state = emptyState(); state.imuAge = 99999;
+  el('gameMessage').textContent = ''; showMode(); render(state); pollData(version);
+}
+el('startGame').addEventListener('click', async () => {
+  if (el('startGame').disabled) return;
+  if (mode === 'demo') { startDemoGame(); return; }
+  // POST se neposila soubezne s pollingem. ID brani dvojimu startu pri opakovani.
+  cancelNetwork(); commandBusy = true; const currentVersion = version;
+  const id = pendingStartId || uniqueId(); pendingStartId = id;
+  el('gameMessage').textContent = ''; render(state);
+  try { await request(endpoint.replace(/\/data$/, '') + '/start/' + id, 'POST', currentVersion); }
+  catch (err) {
+    if (mode === 'live' && version === currentVersion) el('gameMessage').textContent =
+      err.name === 'AbortError' ? 'Potvrzení startu nepřišlo. Ověřuji stav tyče…' : err.message;
+  } finally {
+    if (mode === 'live' && version === currentVersion) { commandBusy = false; pollData(version); }
+  }
+});
+el('deviceIp').value = isLocalPreview ? '192.168.4.1' : location.host;
+el('connectDevice').addEventListener('click', () => {
+  let input = el('deviceIp').value.trim(); if (!input) return;
+  if (!/^https?:\/\//i.test(input)) input = 'http://' + input;
+  try {
+    const parsed = new URL(input);
+    if (parsed.protocol !== 'http:' || parsed.username || parsed.password ||
+        parsed.pathname !== '/' || parsed.search || parsed.hash) throw Error('Zadej pouze adresu tyče, například 192.168.4.1');
+    startLive(parsed.origin === location.origin ? '/data' : parsed.origin + '/data');
+  } catch (err) { el('connectionHelp').textContent = err.message; }
+});
+el('useDemo').addEventListener('click', switchToDemo);
+showMode(); render(state); requestAnimationFrame(animationFrame);
+if (mode === 'live') startLive('/data');
+
+</script></body></html>
