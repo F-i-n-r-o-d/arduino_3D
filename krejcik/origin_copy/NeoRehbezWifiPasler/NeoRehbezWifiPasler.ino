@@ -19,8 +19,6 @@ int keyIndex = 0;              // your network key index number (needed only for
 
 
 
-
-
 void setup(){
 
   Serial.begin(115200); // linka pro PC konzoli
@@ -66,16 +64,16 @@ void loop(){
   for(int i=0;i<64;i++)
   {
     if (i==hodnota) {
-      np.neoPixelSetValue((uint8_t)i,210,35,80,true); // když se daný index rovná indexu vypočítanému z náklonu, daná dioda se vykreslí červeně
+      np.neoPixelSetValue((uint8_t)i,214,36,17,true); // když se daný index rovná indexu vypočítanému z náklonu, daná dioda se vykreslí červeně
     }
     else if (i>=randNumber && i< randNumber+10 && room == roomTarget) {
-      np.neoPixelSetValue((uint8_t)i,0,20,0,true); // rozsah o velikosti 10 daný náhodným číslem  se vykreslí zeleně
+      np.neoPixelSetValue((uint8_t)i,16,210,117,true); // rozsah o velikosti 10 daný náhodným číslem  se vykreslí zeleně
     }
     else if ((i < 5 || i > 57) && skore > 5) {
-
+      np.neoPixelSetValue((uint8_t)i,148,33,106,true); 
     }
     else {
-      np.neoPixelSetValue((uint8_t)i,0,0,20,true); // zbytek modře
+      np.neoPixelSetValue((uint8_t)i,104,174,212,true); // zbytek modře
     }
   }
  
