@@ -315,6 +315,7 @@ void loop() {
     np.neoPixelSetValue(kulicka, 120, 0, 0, false);
   }
 
+  
   np.neoPixelShow();
 
   cekej(4000);
