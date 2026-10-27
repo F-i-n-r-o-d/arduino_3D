@@ -8,7 +8,7 @@ NeoPixelConnect np(4, MAXIMUM_NUM_NEOPIXELS, pio0, 0);
 
 const uint8_t LIGHT_COUNT = 5;
 const uint8_t LIGHT_LEDS[LIGHT_COUNT] = {28, 30, 32, 34, 36};
-
+ 
 char ssid[] = "RP2040";
 char pass[] = "ArduinoWeb";
 WiFiServer server(80);
