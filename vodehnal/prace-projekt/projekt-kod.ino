@@ -50,7 +50,7 @@ void svit(int p, int r, int g, int b) {
   np.neoPixelSetValue(p, r, g, b, false);
   np.neoPixelShow();
 }
-/*
+
 void posliStranku(WiFiClient &client) {
   client.println("HTTP/1.1 200 OK");
   client.println("Content-Type: text/html; charset=UTF-8");
@@ -111,7 +111,7 @@ void posliStranku(WiFiClient &client) {
   client.println(F("smycka();"));
   client.println(F("</script></body></html>"));
 }
-*/
+
 void web() {
   WiFiClient client = server.available();
   if (!client) return;
