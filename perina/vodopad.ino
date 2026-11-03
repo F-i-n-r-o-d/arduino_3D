@@ -1,185 +1,287 @@
 
-#include <Wire.h>
-#include <Adafruit_NeoPixel.h>
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
+#include <NeoPixelConnect.h>
+#include <Arduino_LSM6DSOX.h>
 #include <math.h>
 
-// ===== NASTAVENI =====
+#define MAXIMUM_NUM_NEOPIXELS 64
+#define LED_PIN 4
 
-#define LED_PIN 6
-#define LED_COUNT 60
+// Nastaveni vody
+#define DEAD_ZONE 3.0
+#define MIN_SPEED 2.0
+#define MAX_SPEED 38.0
 
-// Citlivost naklonu ve stupnich
-#define DEAD_ZONE 4.0
+// Jas vody
+#define MAX_BLUE 100
+#define MAX_GREEN 65
 
-// Rychlost pri malem a velkem naklonu
-#define SLOW_SPEED 140
-#define FAST_SPEED 12
-
-// Jas LED 0-255
-#define LED_BRIGHTNESS 100
-
-// ====================
-
-Adafruit_NeoPixel leds(
-  LED_COUNT,
+NeoPixelConnect np(
   LED_PIN,
-  NEO_GRB + NEO_KHZ800
+  MAXIMUM_NUM_NEOPIXELS,
+  pio0,
+  0
 );
 
-Adafruit_MPU6050 mpu;
+float x, y, z;
 
+// Naklon
 float tilt = 0;
 float filteredTilt = 0;
+float zeroTilt = 0;
 
+// Smer proudu
 int direction = 1;
-float speedLevel = 0;
 
+// Pozice tekouci vody
+float flowPosition = 0;
+
+// Casovani
 unsigned long lastUpdate = 0;
 unsigned long lastSensorRead = 0;
 
-int flowPosition = 0;
+// Rychlost vody
+float flowSpeed = MIN_SPEED;
+
+
+// =================================
+// VYPOCET NAKLONU
+// =================================
+
+float getTilt(float x, float y, float z) {
+  return atan2(
+    x,
+    sqrt(y * y + z * z)
+  ) * 180.0 / PI;
+}
+
+
+// =================================
+// KALIBRACE SENZORU
+// =================================
+
+void calibrateSensor() {
+
+  Serial.println("Kalibrace...");
+  Serial.println("Drz tyc rovne!");
+
+  float sum = 0;
+  int samples = 0;
+
+  for (int i = 0; i < 100; i++) {
+
+    if (IMU.accelerationAvailable()) {
+
+      IMU.readAcceleration(x, y, z);
+
+      sum += getTilt(x, y, z);
+      samples++;
+    }
+
+    delay(10);
+  }
+
+  if (samples > 0) {
+    zeroTilt = sum / samples;
+  }
+
+  filteredTilt = 0;
+
+  Serial.print("Nulovy naklon: ");
+  Serial.println(zeroTilt);
+
+  Serial.println("Kalibrace hotova!");
+}
+
+
+// =================================
+// VYKRESLENI VODY
+// =================================
+
+void drawWater() {
+
+  for (int i = 0; i < MAXIMUM_NUM_NEOPIXELS; i++) {
+
+    // Plynula vlna vody
+    float wave = sin(
+      (i - flowPosition) * 0.45
+    );
+
+    wave = (wave + 1.0) / 2.0;
+
+    // Zvyrazneni svetelnych vln
+    float brightness = wave * wave * wave;
+
+    // Jemne dalsi odlesky
+    float detail = sin(
+      (i - flowPosition) * 1.1
+    );
+
+    detail = (detail + 1.0) / 2.0;
+
+    int blue = 5 + brightness * MAX_BLUE;
+
+    int green = 2
+      + brightness * MAX_GREEN
+      + detail * 10;
+
+    int red = 0;
+
+    blue = constrain(blue, 0, 255);
+    green = constrain(green, 0, 255);
+
+    np.neoPixelSetValue(
+      (uint8_t)i,
+      red,
+      green,
+      blue,
+      false
+    );
+  }
+
+  np.neoPixelShow();
+}
+
+
+// =================================
+// SETUP
+// =================================
 
 void setup() {
+
   Serial.begin(115200);
-  Wire.begin();
 
-  leds.begin();
-  leds.setBrightness(LED_BRIGHTNESS);
-  leds.clear();
-  leds.show();
+  delay(1500);
 
-  if (!mpu.begin()) {
-    Serial.println("CHYBA: MPU6050 nenalezen!");
-    while (true) {
+  Serial.println("VODNI LED TY C");
+
+  // Spusteni senzoru
+  if (!IMU.begin()) {
+
+    Serial.println("CHYBA IMU!");
+
+    while (1) {
       delay(100);
     }
   }
 
-  mpu.setAccelerometerRange(
-    MPU6050_RANGE_4_G
-  );
+  Serial.println("IMU OK!");
 
-  mpu.setFilterBandwidth(
-    MPU6050_BAND_21_HZ
-  );
+  // Kalibrace
+  calibrateSensor();
 
-  Serial.println("LED vodni tyc spustena!");
+  lastUpdate = millis();
+  lastSensorRead = millis();
+
+  Serial.println("Vodopad spusten!");
 }
 
+
+// =================================
+// HLAVNI PROGRAM
+// =================================
+
 void loop() {
-  // ===== CTENI SENZORU =====
 
-  if (millis() - lastSensorRead >= 10) {
-    lastSensorRead = millis();
+  unsigned long now = millis();
 
-    sensors_event_t a, g, temp;
-    mpu.getEvent(&a, &g, &temp);
+  // =================================
+  // CTENI SENZORU
+  // =================================
 
-    // Vypocet naklonu
-    tilt = atan2(
-      a.acceleration.x,
-      a.acceleration.z
-    ) * 180.0 / PI;
+  if (now - lastSensorRead >= 10) {
 
-    // Vyhlazeni hodnoty
-    filteredTilt =
-      filteredTilt * 0.80 + tilt * 0.20;
+    lastSensorRead = now;
 
-    Serial.print("Naklon: ");
-    Serial.println(filteredTilt);
+    if (IMU.accelerationAvailable()) {
+
+      IMU.readAcceleration(x, y, z);
+
+      tilt = getTilt(x, y, z) - zeroTilt;
+
+      // Vyhlazeni pohybu
+      filteredTilt =
+        filteredTilt * 0.85
+        + tilt * 0.15;
+    }
   }
 
-  // ===== SMER PROUDENI =====
+
+  // =================================
+  // SMER VODY
+  // =================================
 
   if (filteredTilt > DEAD_ZONE) {
+
     direction = 1;
+
   }
-  else if (filteredTilt < -DEAD_ZONE) {
+
+  if (filteredTilt < -DEAD_ZONE) {
+
     direction = -1;
+
   }
 
-  // ===== RYCHLOST PODLE NAKLONU =====
 
-  speedLevel = abs(filteredTilt);
+  // =================================
+  // RYCHLOST PODLE NAKLONU
+  // =================================
 
-  speedLevel = constrain(
-    speedLevel,
-    0,
-    60
-  );
+  float angle = abs(filteredTilt);
 
-  int interval = map(
-    (int)speedLevel,
-    0,
-    60,
-    SLOW_SPEED,
-    FAST_SPEED
-  );
+  angle = constrain(angle, 0, 60);
 
-  // Pri malem naklonu zustane animace pomala
-  if (abs(filteredTilt) <= DEAD_ZONE) {
-    interval = SLOW_SPEED;
+  flowSpeed = MIN_SPEED
+    + (angle / 60.0)
+    * (MAX_SPEED - MIN_SPEED);
+
+
+  // =================================
+  // POHYB VODY
+  // =================================
+
+  float deltaTime =
+    (now - lastUpdate) / 1000.0;
+
+  lastUpdate = now;
+
+  flowPosition +=
+    direction * flowSpeed * deltaTime;
+
+  // Smycka LED pasku
+  while (flowPosition >= MAXIMUM_NUM_NEOPIXELS) {
+    flowPosition -= MAXIMUM_NUM_NEOPIXELS;
   }
 
-  // ===== POSUN VODNIHO PROUDU =====
-
-  if (millis() - lastUpdate >=
-      (unsigned long)interval) {
-
-    lastUpdate = millis();
-
-    flowPosition += direction;
-
-    // Konec pasku -> zacatek
-    if (flowPosition >= LED_COUNT) {
-      flowPosition = 0;
-    }
-
-    if (flowPosition < 0) {
-      flowPosition = LED_COUNT - 1;
-    }
+  while (flowPosition < 0) {
+    flowPosition += MAXIMUM_NUM_NEOPIXELS;
   }
 
-  // ===== VYKRESLENI VODY =====
 
-  for (int i = 0; i < LED_COUNT; i++) {
+  // =================================
+  // VYKRESLENI
+  // =================================
 
-    // Vzdalenost od stredu proudu
-    int distance = abs(i - flowPosition);
+  drawWater();
 
-    // Plynuly prechod pres konec pasku
-    distance = min(
-      distance,
-      LED_COUNT - distance
-    );
 
-    // Jas hlavni vlny
-    int brightness = 255 - distance * 35;
+  // =================================
+  // LADENI
+  // =================================
 
-    brightness = constrain(
-      brightness,
-      0,
-      255
-    );
+  Serial.print("Naklon: ");
+  Serial.print(filteredTilt);
 
-    // Trochu promenlive barvy vody
-    int blue = brightness;
-    int green = brightness * 0.55;
+  Serial.print(" | Smer: ");
 
-    // Jemne svetlejsi stred proudu
-    if (distance == 0) {
-      green = min(255, green + 50);
-    }
-
-    leds.setPixelColor(
-      i,
-      leds.Color(0, green, blue)
-    );
+  if (direction == 1) {
+    Serial.print("DOPRAVA");
+  } else {
+    Serial.print("DOLEVA");
   }
 
-  leds.show();
+  Serial.print(" | Rychlost: ");
+  Serial.println(flowSpeed);
 
-  delay(2);
+  delay(5);
 }
