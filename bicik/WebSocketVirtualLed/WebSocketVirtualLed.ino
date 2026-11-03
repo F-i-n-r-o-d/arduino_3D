@@ -6,6 +6,7 @@
 #define MAXIMUM_NUM_NEOPIXELS 64
 #define ZONE_SIZE 10
 #define MAX_START 54
+#define END_BRIGHTNESS 20      // jas zelene na konci hry (0-255), nizsi = mensi odber
 
 // ---------- Nastaveni hry (lze menit pres Web API /api/config nebo Serial) ----------
 const int LEVELS = 5;
@@ -22,6 +23,7 @@ WiFiServer server(80);
 bool wifiOk = false;
 bool imuOk = false;
 int lastWifiStatus = 0;
+unsigned long lastWifiCheck = 0;
 
 float x = 0, y = 0, z = 0;
 
@@ -35,15 +37,16 @@ int   state = 0;                  // 0 = hra bezi, 1 = konec
 unsigned long gameStart = 0, gameEnd = 0;
 unsigned long lastTick = 0, holdStart = 0, goalSpawn = 0, lastReport = 0;
 unsigned long onTargetMs = 0, playedMs = 0;
-int   hodnota = 0;
+int   hodnota = 0;                // zaokrouhlena pozice pro herni logiku
+float ballPos = 0;                // plynula pozice 0..63
+
+// blikani na konci
+bool blinkLast = false;
+bool blinkForce = true;
 
 // ---------- Seriova komunikace (JSON pres USB kabel) ----------
 bool serialJson = true;           // true = JSON radky, false = citelny text
 String serialLine = "";
-
-int mapFloat(float val, float in_min, float in_max, int out_min, int out_max) {
-  return (val - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-}
 
 float accuracy() {
   if (playedMs == 0) return 0;
@@ -58,7 +61,6 @@ const char* hodnoceni() {
 }
 
 // ---------- JSON (spolecne pro web i Serial) ----------
-// ev = nazev udalosti (start/goal/level/end/status) nebo nullptr
 void writeStatusJson(Print &p, const char* ev) {
   unsigned long endT = (state == 1) ? gameEnd : millis();
   p.print("{");
@@ -66,7 +68,7 @@ void writeStatusJson(Print &p, const char* ev) {
     p.print("\"event\":\""); p.print(ev); p.print("\",");
   }
   p.print("\"x\":");        p.print(x, 2);
-  p.print(",\"ball\":");    p.print(hodnota);
+  p.print(",\"ball\":");    p.print(ballPos, 1);
   p.print(",\"target\":");  p.print(targetPos, 1);
   p.print(",\"level\":");   p.print(level);
   p.print(",\"levels\":");  p.print(LEVELS);
@@ -126,13 +128,15 @@ void resetGame() {
   gameEnd = gameStart;
   lastTick = gameStart;
   lastReport = gameStart;
+  blinkForce = true;
   spawnTarget();
   logEvent("start");
 }
 
 // ---------- Vytvoreni access pointu ----------
 bool apListening() {
-  return WiFi.status() == WL_AP_LISTENING || WiFi.status() == WL_AP_CONNECTED;
+  int s = WiFi.status();
+  return s == WL_AP_LISTENING || s == WL_AP_CONNECTED;
 }
 
 bool startAP() {
@@ -147,30 +151,22 @@ bool startAP() {
   Serial.print(WIFI_FIRMWARE_LATEST_VERSION);
   Serial.println(")");
 
-  const uint8_t channels[] = {1, 6, 11};
+  WiFi.config(IPAddress(192, 168, 4, 1));
+  int st = WiFi.beginAP(ssid, pass);
+  Serial.print("beginAP vratilo: ");
+  Serial.println(st);              // 7 = OK, 9 = AP_FAILED
 
-  for (int i = 0; i < 3; i++) {
-    Serial.print("Vytvarim AP '"); Serial.print(ssid);
-    Serial.print("' s heslem, kanal "); Serial.println(channels[i]);
-    WiFi.beginAP(ssid, pass, channels[i]);
-    delay(3000);
+  unsigned long t0 = millis();
+  while (millis() - t0 < 10000) {
     if (apListening()) {
-      Serial.println("AP vytvoren (s heslem).");
+      Serial.println("AP bezi.");
       return true;
     }
-    WiFi.end();
-    delay(500);
+    delay(200);
   }
 
-  Serial.println("Zkousim AP BEZ hesla...");
-  WiFi.beginAP(ssid);
-  delay(3000);
-  if (apListening()) {
-    Serial.println("AP vytvoren (BEZ hesla - pripoj se bez zadavani hesla).");
-    return true;
-  }
-
-  Serial.println("CHYBA: AP se nepodarilo vytvorit. Aktualizuj firmware Wi-Fi modulu.");
+  Serial.print("AP se nespustilo, status = ");
+  Serial.println(WiFi.status());
   return false;
 }
 
@@ -212,8 +208,8 @@ void sendPage(WiFiClient &client) {
   client.println(F("<style>"));
   client.println(F("body{font-family:Segoe UI,sans-serif;background:#181818;color:#eee;text-align:center;padding:20px;}"));
   client.println(F(".track{width:640px;max-width:95%;height:46px;background:#0d1117;margin:35px auto;border-radius:23px;position:relative;border:2px solid #30363d;box-shadow:inset 0 2px 6px #000;}"));
-  client.println(F("#target{position:absolute;height:100%;width:15.6%;background:#3fb950;opacity:0.65;border-radius:8px;}"));
-  client.println(F("#ball{position:absolute;width:34px;height:34px;background:#f85149;border-radius:50%;top:6px;box-shadow:0 0 12px #f85149;}"));
+  client.println(F("#target{position:absolute;height:100%;width:15.6%;background:#3fb950;opacity:0.65;border-radius:8px;transition:left .1s linear;}"));
+  client.println(F("#ball{position:absolute;width:34px;height:34px;background:#f85149;border-radius:50%;top:6px;box-shadow:0 0 12px #f85149;transition:left .1s linear;}"));
   client.println(F(".card{background:#21262d;display:inline-block;padding:12px 24px;border-radius:10px;margin:8px;border:1px solid #30363d;}"));
   client.println(F("h1{margin-bottom:5px;} b{color:#58a6ff;font-size:1.3em;}"));
   client.println(F("#msg{font-size:1.2em;margin:10px;color:#e3b341;min-height:1.5em;}"));
@@ -359,7 +355,8 @@ void handleSerial() {
 
 void setup() {
   Serial.begin(115200);
-  delay(2000);                       // nic nevyzaduje otevreny Serial monitor
+  while (!Serial && millis() < 5000);   // pocka max 5 s na Serial monitor
+  delay(500);
   Serial.println("--- START ---");
 
   // 1. Wi-Fi access point jako PRVNI
@@ -387,8 +384,9 @@ void loop() {
   unsigned long dtMs = now - lastTick;
   lastTick = now;
 
-  // Hlaseni pripojeni / odpojeni zarizeni k AP
-  if (wifiOk) {
+  // Hlaseni pripojeni / odpojeni zarizeni k AP (jen kazdych 500 ms, je to SPI dotaz)
+  if (wifiOk && now - lastWifiCheck >= 500) {
+    lastWifiCheck = now;
     int st = WiFi.status();
     if (st != lastWifiStatus) {
       lastWifiStatus = st;
@@ -397,11 +395,14 @@ void loop() {
     }
   }
 
-  // 1. Cteni akcelerometru
+  // 1. Cteni akcelerometru + vyhlazeni pozice
   if (imuOk && IMU.accelerationAvailable()) {
     IMU.readAcceleration(x, y, z);
   }
-  hodnota = mapFloat(x, -0.5, 0.5, 0, 63);
+  float raw = constrain((x + 0.5) * 63.0, 0.0, 63.0);
+  float alpha = 1.0 - exp(-(float)dtMs / 60.0);   // 60 ms = vetsi cislo, mekci pohyb
+  ballPos += (raw - ballPos) * alpha;
+  hodnota = (int)(ballPos + 0.5);                 // pro herni logiku zustane int
   if (hodnota > 63) hodnota = 63;
   if (hodnota < 0) hodnota = 0;
 
@@ -437,7 +438,7 @@ void loop() {
             goalsInLevel = goalsPerLevel;
             state = 1;
             gameEnd = now;
-            np.neoPixelFill(0, 60, 0, true);
+            blinkForce = true;
             logEvent("end");
           } else {
             logEvent("level");
@@ -449,12 +450,19 @@ void loop() {
       holdStart = 0;
     }
 
-    // 4. Vykresleni LED pasku
+    // 4. Vykresleni LED pasku (plynula tecka rozlozena mezi 2 LED)
     if (state == 0) {
+      int i0 = min((int)ballPos, 62);
+      float f = ballPos - i0;
       for (int i = 0; i < 64; i++) {
-        if (i == hodnota)                               np.neoPixelSetValue((uint8_t)i, 120, 0, 0, false);
-        else if (i >= tStart && i < tStart + ZONE_SIZE) np.neoPixelSetValue((uint8_t)i, 0, 30, 0, false);
-        else                                            np.neoPixelSetValue((uint8_t)i, 0, 0, 10, false);
+        float w = 0;
+        if (i == i0) w = 1.0 - f;
+        else if (i == i0 + 1) w = f;
+        bool zone = (i >= tStart && i < tStart + ZONE_SIZE);
+        uint8_t r = 120 * w;
+        uint8_t g = zone ? 30 * (1 - w) : 0;
+        uint8_t b = zone ? 0 : 10 * (1 - w);
+        np.neoPixelSetValue((uint8_t)i, r, g, b, false);
       }
       np.neoPixelShow();
     }
@@ -465,6 +473,17 @@ void loop() {
       if (serialJson) writeStatusJson(Serial, "status");
       else printStatus();
     }
+  } else {
+    // state == 1: konec hry, cely pasek blika zelene
+    bool on = ((now - gameEnd) / 300) % 2 == 0;
+    if (blinkForce || on != blinkLast) {
+      blinkForce = false;
+      blinkLast = on;
+      if (on) np.neoPixelFill(0, END_BRIGHTNESS, 0, true);
+      else    np.neoPixelClear(true);
+    }
+    // volitelne: automaticky restart po 10 s
+    // if (now - gameEnd > 10000) resetGame();
   }
 
   // 6. Seriove prikazy + web server + REST API
