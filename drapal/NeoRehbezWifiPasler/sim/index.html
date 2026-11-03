@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reakční test – simulace</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Trénink pozornosti</h1>
+  <p class="sub">Simulace bez Arduina &middot; stejná logika jako .ino</p>
+  <p class="hint">Škubnutí = klávesa <kbd>&uarr;</kbd> (šipka nahoru)</p>
+
+  <div id="status">Čeká na start</div>
+  <div class="lights" id="lights"></div>
+
+  <div class="row">
+    <div class="card">Poslední čas<b id="last">–</b></div>
+    <div class="card">Nejlepší čas<b id="best">–</b></div>
+    <div class="card">Platné pokusy<b id="ok">0</b></div>
+    <div class="card">Předčasné<b id="fs">0</b></div>
+  </div>
+
+  <h3>Historie časů</h3>
+  <div id="bars"></div>
+
+  <script src="game.js"></script>
+</body>
+</html>

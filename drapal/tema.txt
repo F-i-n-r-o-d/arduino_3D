@@ -1,0 +1,1 @@
+Trénink pozornosti - postupně se rozsvítí 5 světel (jako ve formulích) a v náhodném čase od rozsvícení světel (0.5-5 vteřin) se všechna světla zhasnou. Když se zhasnou, úkolem je co nejdřív škubnout a podle toho se spočítá čas reakce.

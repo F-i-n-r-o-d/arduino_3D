@@ -1,0 +1,111 @@
+body {
+  font-family: Segoe UI, sans-serif;
+  background: #141414;
+  color: #eee;
+  text-align: center;
+  padding: 16px;
+}
+
+h1 {
+  margin: 8px 0 4px;
+}
+
+.sub {
+  color: #9aa;
+  margin-bottom: 8px;
+}
+
+.hint {
+  color: #bbb;
+  margin-bottom: 22px;
+}
+
+kbd {
+  background: #333;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 1.1em;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+.card {
+  background: #222;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 14px 22px;
+  min-width: 140px;
+}
+
+.card b {
+  display: block;
+  font-size: 1.6em;
+  color: #7cb7ff;
+  margin-top: 6px;
+}
+
+.lights {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin: 24px 0;
+}
+
+.dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #333;
+  border: 2px solid #555;
+  transition: background 0.08s, box-shadow 0.08s;
+}
+
+.dot.on {
+  background: #e11;
+  box-shadow: 0 0 12px #e11;
+  border-color: #f66;
+}
+
+.dot.green {
+  background: #3a7;
+  box-shadow: 0 0 12px #3a7;
+  border-color: #5c9;
+}
+
+#bars {
+  max-width: 420px;
+  margin: 18px auto;
+  text-align: left;
+}
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.bar-row span {
+  width: 52px;
+  font-size: 0.9em;
+  color: #aaa;
+}
+
+.bar {
+  height: 18px;
+  background: #3a7;
+  border-radius: 4px;
+  min-width: 2px;
+}
+
+#status {
+  font-size: 1.15em;
+  margin: 10px 0;
+  color: #fc6;
+}

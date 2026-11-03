@@ -1,0 +1,6 @@
+tyč bude používat svůj software pro balancování jako základ
+- po nkrátém úspěšném vybalancování tyče se na okrajích zbarví světla do výrazně odlišné barvy
+- tím se "odemkne" více místa pro možný vyskyt pole, do kterého lze vstoupít sjetím kuličky k okraji tyče
+- pokud se nenachází te v "obrazovce" s polem, bude jeden z okrajů svítít odlišnou barvou (aby byl hráč doveden k poli)
+- nejdříve se odemknou jenom dvě další obrazovky pro pole, ale po nkrátém úspěšném vybalancování tyče se odemknou dvě další (celkem 5)
+- po každém odemknutí se též zmenší pole
