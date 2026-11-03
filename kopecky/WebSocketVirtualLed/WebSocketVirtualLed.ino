@@ -1,3 +1,4 @@
+
 #include <NeoPixelConnect.h>
 #include <Arduino_LSM6DSOX.h>
 #include <WiFiNINA.h>
@@ -7,22 +8,25 @@
 
 NeoPixelConnect np(4, MAXIMUM_NUM_NEOPIXELS, pio0, 0);
 
-// Nastavení náhodného pohybu kuličky
-unsigned long intervalPohybu = 1000; // čas v ms
+// Nastavení pohybu
+unsigned long intervalPohybu = 1000;
 unsigned long posledniPohyb = 0;
 
-int polohaKulicky = 0;  // poloha kuličky 0–63
-
+int polohaKulicky = 0;
 int randNumber;
 int citac = 0;
+
 float x, y, z;
-char ssid[] = "RP2040";        // Wi-Fi SSID
-char pass[] = "ArduinoWeb";    // Wi-Fi heslo
+
+char ssid[] = "RP2040";
+char pass[] = "ArduinoWeb";
 
 WiFiServer server(80);
 
-int mapFloat(float val, float in_min, float in_max, int out_min, int out_max) {
-  return (val - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+int mapFloat(float val, float in_min, float in_max,
+             int out_min, int out_max) {
+  return (val - in_min) * (out_max - out_min) /
+         (in_max - in_min) + out_min;
 }
 
 void setup() {
@@ -40,13 +44,16 @@ void setup() {
 
   Serial.print("Vytvarim AP: ");
   Serial.println(ssid);
+
   if (WiFi.beginAP(ssid, pass) != WL_AP_LISTENING) {
     Serial.println("Chyba AP!");
     while (1);
   }
 
   delay(2000);
+
   server.begin();
+
   Serial.print("Web server bezi na http://");
   Serial.println(WiFi.localIP());
 
@@ -54,82 +61,152 @@ void setup() {
 }
 
 void loop() {
+
   // 1. Cteni akcelerometru
   if (IMU.accelerationAvailable()) {
     IMU.readAcceleration(x, y, z);
   }
 
   int hodnota = mapFloat(x, -0.5, 0.5, 0, 63);
+
   if (hodnota > 63) hodnota = 63;
   if (hodnota < 0) hodnota = 0;
 
-  // Náhodný pohyb kuličky každých X milisekund
+  // 2. Nahodny pohyb kulicky
   unsigned long aktualniCas = millis();
 
   if (aktualniCas - posledniPohyb >= intervalPohybu) {
     posledniPohyb = aktualniCas;
 
-    // Náhodně doleva (-1) nebo doprava (+1)
     if (random(0, 2) == 0) {
       polohaKulicky--;
     } else {
       polohaKulicky++;
     }
 
-    // Kulička zůstane v rozsahu 0–63
     if (polohaKulicky < 0) polohaKulicky = 0;
     if (polohaKulicky > 63) polohaKulicky = 63;
   }
 
-  // 2. Vykresleni fyzickeho LED pasku
+  // 3. Vykresleni LED pasku
   for (int i = 0; i < 64; i++) {
+
     if (i == polohaKulicky) {
-      np.neoPixelSetValue((uint8_t)i, 120, 0, 0, true);   // Cervena kulicka
-    } else if (i >= randNumber && i < randNumber + 10) {
-      np.neoPixelSetValue((uint8_t)i, 20, 20, 0, true);   // Zluty cil
-    } else {
-      np.neoPixelSetValue((uint8_t)i, 0, 0, 10, true);    // Modre pozadi
+      np.neoPixelSetValue((uint8_t)i, 120, 0, 0, true);
+    }
+    else if (i >= randNumber && i < randNumber + 10) {
+      np.neoPixelSetValue((uint8_t)i, 20, 20, 0, true);
+    }
+    else {
+      np.neoPixelSetValue((uint8_t)i, 0, 0, 10, true);
     }
   }
 
-  // 3. Herni logika
-  if (polohaKulicky >= randNumber && polohaKulicky < randNumber + 10) citac++;
+  // 4. Herni logika
+  if (polohaKulicky >= randNumber &&
+      polohaKulicky < randNumber + 10) {
+    citac++;
+  }
+
   if (citac > 25) {
     randNumber = random(0, 54);
     citac = 0;
   }
 
-  // 4. Obsluha Web Serveru
+  // 5. Web server
   WiFiClient client = server.available();
+
   if (client) {
+
     String currentLine = "";
+    String requestLine = "";
+
     bool isDataRequest = false;
+    bool isIntervalRequest = false;
 
     while (client.connected()) {
+
       if (client.available()) {
+
         char c = client.read();
 
         if (c == '\n') {
+
+          // Prvni radek HTTP pozadavku
+          if (requestLine.length() == 0) {
+            requestLine = currentLine;
+
+            // Telemetrie
+            if (requestLine.startsWith("GET /data ")) {
+              isDataRequest = true;
+            }
+
+            // Nastaveni intervalu ze slideru
+            if (requestLine.startsWith("GET /setInterval?value=")) {
+
+              int zacatek = requestLine.indexOf("value=") + 6;
+              int konec = requestLine.indexOf(' ', zacatek);
+
+              String hodnotaText =
+                requestLine.substring(zacatek, konec);
+
+              int novaHodnota = hodnotaText.toInt();
+
+              if (novaHodnota >= 300 && novaHodnota <= 3000) {
+                intervalPohybu = novaHodnota;
+
+                Serial.print("Novy interval: ");
+                Serial.println(intervalPohybu);
+              }
+
+              isIntervalRequest = true;
+            }
+          }
+
           if (currentLine.length() == 0) {
+
+            // Odpoved na pozadavek
             if (isDataRequest) {
-              // Rychla odpoved s telemetrii
+
               client.println("HTTP/1.1 200 OK");
               client.println("Content-Type: text/plain");
               client.println("Access-Control-Allow-Origin: *");
-              client.println("Connection: close\r\n");
-              
-              client.print(x, 2); client.print(",");
-              client.print(y, 2); client.print(",");
-              client.print(z, 2); client.print(",");
-              client.print(polohaKulicky); client.print(",");
+              client.println("Connection: close");
+              client.println();
+
+              client.print(x, 2);
+              client.print(",");
+              client.print(y, 2);
+              client.print(",");
+              client.print(z, 2);
+              client.print(",");
+              client.print(polohaKulicky);
+              client.print(",");
               client.println(randNumber);
-            } else {
-              // Kompletni HTML stranka s grafickym rozhranim
+
+            }
+
+            else if (isIntervalRequest) {
+
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-Type: text/plain");
+              client.println("Access-Control-Allow-Origin: *");
+              client.println("Connection: close");
+              client.println();
+
+              client.println("OK");
+            }
+
+            else {
+
+              // HTML stranka
               client.println("HTTP/1.1 200 OK");
               client.println("Content-Type: text/html; charset=UTF-8");
-              client.println("Connection: close\r\n");
+              client.println("Connection: close");
+              client.println();
 
               client.println(F("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Rehabko Monitor</title>"));
+
               client.println(F("<style>"));
               client.println(F("body{font-family:Segoe UI,sans-serif;background:#181818;color:#eee;text-align:center;padding:20px;}"));
               client.println(F(".track{width:640px;height:46px;background:#0d1117;margin:35px auto;border-radius:23px;position:relative;border:2px solid #30363d;box-shadow:inset 0 2px 6px #000;}"));
@@ -139,46 +216,58 @@ void loop() {
               client.println(F("h1{margin-bottom:5px;} b{color:#58a6ff;font-size:1.3em;}"));
               client.println(F("</style></head><body>"));
 
-              client.println(F("<h1>Rehabilitační pomůcka</h1><p>Živý monitor náklonu</p>"));
+              client.println(F("<h1>Rehabilitacni pomucka</h1><p>Zivy monitor naklonu</p>"));
+
               client.println(F("<div class='track'><div id='target'></div><div id='ball'></div></div>"));
-              client.println(F("<div class='card'><p>Náklon X: <br><b id='valX'>0.00</b> g</p></div>"));
-              client.println(F("<div class='card'><p>Poloha diody: <br><b id='valD'>0</b> / 63</p></div>"));
+
+              client.println(F("<div class='card'><p>Naklon X:<br><b id='valX'>0.00</b> g</p></div>"));
+
+              client.println(F("<div class='card'><p>Poloha diody:<br><b id='valD'>0</b> / 63</p></div>"));
 
               client.println(F("<div class='card'>"));
-              client.println(F("<p>Interval pohybu kuličky:</p>"));
-              client.println(F("<input type='range' id='intervalSlider' min='300' max='3000' value='500' step='100' style='width:300px;'>"));
-              client.println(F("<p><b id='intervalValue'>500</b> ms</p>"));
+              client.println(F("<p>Interval pohybu kulicky:</p>"));
+              client.println(F("<input type='range' id='intervalSlider' min='300' max='3000' value='1000' step='100' style='width:300px;'>"));
+              client.println(F("<p><b id='intervalValue'>1000</b> ms</p>"));
               client.println(F("</div>"));
 
+              // JavaScript
               client.println(F("<script>"));
+
               client.println(F("function loopData(){"));
-              client.println(F("document.getElementById('intervalSlider').addEventListener('input', function() {"));
-              client.println(F("  document.getElementById('intervalValue').innerText = this.value;"));
-              client.println(F("});"));
-              client.println(F("  fetch('/data').then(r=>r.text()).then(txt=>{"));
-              client.println(F("    let d = txt.split(',');"));
-              client.println(F("    document.getElementById('valX').innerText = d[0];"));
-              client.println(F("    document.getElementById('valD').innerText = d[3];"));
-              client.println(F("    document.getElementById('ball').style.left = (parseFloat(d[3]) * 9.5) + 'px';"));
-              client.println(F("    document.getElementById('target').style.left = (parseFloat(d[4]) * 10) + 'px';"));
-              client.println(F("    document.getElementById('target').style.width = '100px';"));
-              client.println(F("  }).catch(()=>{}).finally(()=>{ setTimeout(loopData, 35); });"));
+              client.println(F("fetch('/data').then(r=>r.text()).then(txt=>{"));
+              client.println(F("let d=txt.split(',');"));
+              client.println(F("document.getElementById('valX').innerText=d[0];"));
+              client.println(F("document.getElementById('valD').innerText=d[3];"));
+              client.println(F("document.getElementById('ball').style.left=(parseFloat(d[3])*9.5)+'px';"));
+              client.println(F("document.getElementById('target').style.left=(parseFloat(d[4])*10)+'px';"));
+              client.println(F("document.getElementById('target').style.width='100px';"));
+              client.println(F("}).catch(()=>{}).finally(()=>{setTimeout(loopData,35);});"));
               client.println(F("}"));
+
+              // Slider -> Arduino
+              client.println(F("document.getElementById('intervalSlider').addEventListener('input',function(){"));
+              client.println(F("let hodnota=this.value;"));
+              client.println(F("document.getElementById('intervalValue').innerText=hodnota;"));
+              client.println(F("fetch('/setInterval?value='+hodnota).catch(error=>console.log(error));"));
+              client.println(F("});"));
+
               client.println(F("loopData();"));
+
               client.println(F("</script></body></html>"));
             }
+
             break;
+
           } else {
             currentLine = "";
           }
+
         } else if (c != '\r') {
           currentLine += c;
-          if (currentLine.endsWith("GET /data")) {
-            isDataRequest = true;
-          }
         }
       }
     }
+
     client.stop();
   }
 }
