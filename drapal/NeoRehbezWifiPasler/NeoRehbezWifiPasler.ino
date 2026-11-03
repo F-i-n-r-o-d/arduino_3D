@@ -7,8 +7,9 @@
 NeoPixelConnect np(4, MAXIMUM_NUM_NEOPIXELS, pio0, 0);
 
 const uint8_t LIGHT_COUNT = 5;
-const uint8_t LIGHT_LEDS[LIGHT_COUNT] = {28, 30, 32, 34, 36};
- 
+const uint8_t LEDS_PER_LIGHT = 5;
+const uint8_t LIGHT_GROUP_START[LIGHT_COUNT] = {4, 17, 30, 43, 56};
+
 char ssid[] = "RP2040";
 char pass[] = "ArduinoWeb";
 WiFiServer server(80);
@@ -16,7 +17,8 @@ WiFiServer server(80);
 const unsigned long LIGHT_STEP_MS = 500;
 const unsigned long RANDOM_DELAY_MIN_MS = 500;
 const unsigned long RANDOM_DELAY_MAX_MS = 5000;
-const unsigned long RESULT_HOLD_MS = 2500;
+const unsigned long RESULT_HOLD_MS = 1500;
+const unsigned long GO_FLASH_MS = 220;
 const float JERK_THRESHOLD = 0.55f;
 const float JERK_PEAK_MIN = 1.55f;
 const unsigned long JERK_COOLDOWN_MS = 450;
@@ -25,6 +27,7 @@ const uint8_t HISTORY_SIZE = 8;
 
 enum Phase {
   PHASE_START,
+  PHASE_GO_FLASH,
   PHASE_LIGHTING,
   PHASE_WAIT_RANDOM,
   PHASE_MEASURE,
@@ -41,6 +44,7 @@ unsigned long reactionTimeMs = 0;
 float restMag = 1.0f;
 bool imuReady = false;
 unsigned long jerkIgnoreUntilMs = 0;
+bool lastWasNewBest = false;
 
 unsigned long lastValidMs = 0;
 unsigned long bestMs = 0;
@@ -51,11 +55,12 @@ uint8_t historyCount = 0;
 
 const char* phaseLabel() {
   switch (phase) {
-    case PHASE_START:       return "Čeká na start";
-    case PHASE_LIGHTING:    return "Rozsvícení světel";
+    case PHASE_START:       return "Připraven — škubnutím START";
+    case PHASE_GO_FLASH:    return "Start! Připrav se";
+    case PHASE_LIGHTING:    return "Rozsvícení F1 světel";
     case PHASE_WAIT_RANDOM: return "Čekání (náhodná prodleva)";
-    case PHASE_MEASURE:     return "Měření reakce!";
-    case PHASE_RESULT:      return "Výsledek";
+    case PHASE_MEASURE:     return "ZHASNUTO — teď měření!";
+    case PHASE_RESULT:      return lastWasNewBest ? "Nový rekord!" : "Výsledek";
     case PHASE_FALSE_START: return "Předčasná reakce";
     default:                return "?";
   }
@@ -65,10 +70,53 @@ void allLightsOff() {
   np.neoPixelClear(true);
 }
 
+void fillGroup(uint8_t group, uint8_t r, uint8_t g, uint8_t b) {
+  if (group >= LIGHT_COUNT) return;
+  uint8_t start = LIGHT_GROUP_START[group];
+  for (uint8_t j = 0; j < LEDS_PER_LIGHT; j++) {
+    np.neoPixelSetValue(start + j, r, g, b, false);
+  }
+}
+
 void showLights(uint8_t count) {
   np.neoPixelClear(false);
   for (uint8_t i = 0; i < count && i < LIGHT_COUNT; i++) {
-    np.neoPixelSetValue(LIGHT_LEDS[i], 180, 0, 0, false);
+    fillGroup(i, 180, 0, 0);
+  }
+  np.neoPixelShow();
+}
+
+void showResultLights(bool isBest) {
+  np.neoPixelClear(false);
+  for (uint8_t i = 0; i < LIGHT_COUNT; i++) {
+    if (isBest) {
+      fillGroup(i, 200, 150, 0);
+    } else {
+      fillGroup(i, 0, 120, 0);
+    }
+  }
+  np.neoPixelShow();
+}
+
+void showWhiteFlash() {
+  np.neoPixelClear(false);
+  for (uint8_t i = 0; i < LIGHT_COUNT; i++) {
+    fillGroup(i, 180, 180, 180);
+  }
+  np.neoPixelShow();
+}
+
+void updateReadyLights() {
+  unsigned long t = millis() % 1600;
+  uint8_t bri;
+  if (t < 800) {
+    bri = (uint8_t)(20 + (t * 100) / 800);
+  } else {
+    bri = (uint8_t)(120 - ((t - 800) * 100) / 800);
+  }
+  np.neoPixelClear(false);
+  for (uint8_t i = 0; i < LIGHT_COUNT; i++) {
+    fillGroup(i, 0, 40, bri);
   }
   np.neoPixelShow();
 }
@@ -108,10 +156,10 @@ bool detectJerk() {
   return jerked;
 }
 
-void recordValidResult(unsigned long ms) {
+bool recordValidResult(unsigned long ms) {
   lastValidMs = ms;
-
-  if (bestMs == 0 || ms < bestMs) {
+  bool isNewBest = (bestMs == 0 || ms < bestMs);
+  if (isNewBest) {
     bestMs = ms;
   }
   validCount++;
@@ -124,35 +172,49 @@ void recordValidResult(unsigned long ms) {
     }
     historyMs[HISTORY_SIZE - 1] = ms;
   }
+  return isNewBest;
 }
 
 void resetTrialToStart() {
-  allLightsOff();
   lightsOn = 0;
   randomHoldMs = 0;
   reactionTimeMs = 0;
+  lastWasNewBest = false;
   armJerkCooldown();
   phase = PHASE_START;
   phaseStartMs = millis();
+  updateReadyLights();
   Serial.println();
-  Serial.println(F(">>> Škubnutím spusť další pokus."));
+  Serial.println(F(">>> Připraven — škubnutím START."));
 }
 
-void startLighting() {
-  allLightsOff();
+void beginGoFlash() {
   lightsOn = 0;
   randomHoldMs = 0;
   reactionTimeMs = 0;
+  lastWasNewBest = false;
+  showWhiteFlash();
+  armJerkCooldown();
+  phase = PHASE_GO_FLASH;
+  phaseStartMs = millis();
+  Serial.println();
+  Serial.println(F("--- START! Připrav se na F1 světla ---"));
+}
+
+void startLighting() {
+  lightsOn = 0;
+  randomHoldMs = 0;
+  reactionTimeMs = 0;
+  allLightsOff();
   armJerkCooldown();
   phase = PHASE_LIGHTING;
   phaseStartMs = millis();
-  Serial.println();
-  Serial.println(F("--- Nový pokus: rozsvícení světel ---"));
+  Serial.println(F("--- Rozsvícení F1 světel ---"));
 }
 
 void sendDataResponse(WiFiClient& client) {
   client.println(F("HTTP/1.1 200 OK"));
-  client.println(F("Content-Type: text/plain"));
+  client.println(F("Content-Type: text/plain; charset=UTF-8"));
   client.println(F("Access-Control-Allow-Origin: *"));
   client.println(F("Connection: close"));
   client.println();
@@ -168,6 +230,10 @@ void sendDataResponse(WiFiClient& client) {
   client.print(validCount);
   client.print(',');
   client.print(falseStartCount);
+  client.print(',');
+  client.print((int)phase);
+  client.print(',');
+  client.print(lastWasNewBest ? 1 : 0);
 
   for (uint8_t i = 0; i < historyCount; i++) {
     client.print(',');
@@ -190,13 +256,20 @@ void sendHtmlPage(WiFiClient& client) {
   client.println(F(".row{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;}"));
   client.println(F(".card{background:#222;border:1px solid #333;border-radius:10px;padding:14px 22px;min-width:140px;}"));
   client.println(F(".card b{display:block;font-size:1.6em;color:#7cb7ff;margin-top:6px;}"));
-  client.println(F(".lights{display:flex;justify-content:center;gap:10px;margin:24px 0;}"));
-  client.println(F(".dot{width:28px;height:28px;border-radius:50%;background:#333;border:2px solid #555;}"));
-  client.println(F(".dot.on{background:#e11;box-shadow:0 0 12px #e11;border-color:#f66;}"));
+  client.println(F(".card.best-card{border:2px solid #e6b422;background:#2a2410;box-shadow:0 0 14px #e6b42255;}"));
+  client.println(F(".card.best-card b{font-size:2em;color:#ffd54a;}"));
+  client.println(F(".lights{display:flex;justify-content:center;gap:18px;margin:24px 0;max-width:640px;margin-left:auto;margin-right:auto;}"));
+  client.println(F(".dot{width:52px;height:28px;border-radius:8px;background:#333;border:2px solid #555;}"));
+  client.println(F(".dot.on{background:#e11;box-shadow:0 0 14px #e11;border-color:#f66;}"));
+  client.println(F(".dot.ready{background:#246;box-shadow:0 0 10px #38c;border-color:#4af;}"));
+  client.println(F(".dot.go{background:#ddd;box-shadow:0 0 12px #fff;border-color:#fff;}"));
+  client.println(F(".dot.green{background:#3a7;box-shadow:0 0 12px #3a7;border-color:#5c9;}"));
+  client.println(F(".dot.gold{background:#e6b422;box-shadow:0 0 14px #e6b422;border-color:#ffd54a;}"));
   client.println(F("#bars{max-width:420px;margin:18px auto;text-align:left;}"));
   client.println(F(".bar-row{display:flex;align-items:center;gap:8px;margin:6px 0;}"));
-  client.println(F(".bar-row span{width:52px;font-size:0.9em;color:#aaa;}"));
+  client.println(F(".bar-row span{width:72px;font-size:0.9em;color:#aaa;}"));
   client.println(F(".bar{height:18px;background:#3a7;border-radius:4px;min-width:2px;}"));
+  client.println(F(".bar-row.best .bar{background:#e6b422;} .bar-row.best span{color:#ffd54a;font-weight:700;}"));
   client.println(F("#status{font-size:1.15em;margin:10px 0;color:#fc6;}"));
   client.println(F("</style></head><body>"));
   client.println(F("<h1>Trénink pozornosti</h1>"));
@@ -205,7 +278,7 @@ void sendHtmlPage(WiFiClient& client) {
   client.println(F("<div class='lights' id='lights'></div>"));
   client.println(F("<div class='row'>"));
   client.println(F("<div class='card'>Poslední čas<b id='last'>–</b></div>"));
-  client.println(F("<div class='card'>Nejlepší čas<b id='best'>–</b></div>"));
+  client.println(F("<div class='card best-card'>Nejlepší čas<b id='best'>–</b></div>"));
   client.println(F("<div class='card'>Platné pokusy<b id='ok'>0</b></div>"));
   client.println(F("<div class='card'>Předčasné<b id='fs'>0</b></div>"));
   client.println(F("</div>"));
@@ -217,19 +290,26 @@ void sendHtmlPage(WiFiClient& client) {
   client.println(F(" fetch('/data').then(r=>r.text()).then(t=>{"));
   client.println(F("  const p=t.trim().split(',');"));
   client.println(F("  document.getElementById('status').textContent=p[0]||'-';"));
-  client.println(F("  const on=+p[1]||0;"));
-  client.println(F("  [...L.children].forEach((d,i)=>d.classList.toggle('on',i<on));"));
+  client.println(F("  const on=+p[1]||0, ph=+p[6]||0, nb=+p[7]||0;"));
+  client.println(F("  [...L.children].forEach((d,i)=>{"));
+  client.println(F("   d.className='dot';"));
+  client.println(F("   if(ph===0) d.classList.add('ready');"));
+  client.println(F("   else if(ph===1) d.classList.add('go');"));
+  client.println(F("   else if(ph===5 && i<on) d.classList.add(nb?'gold':'green');"));
+  client.println(F("   else if(i<on) d.classList.add('on');"));
+  client.println(F("  });"));
   client.println(F("  const last=+p[2]||0,best=+p[3]||0;"));
   client.println(F("  document.getElementById('last').textContent=last?last+' ms':'–';"));
   client.println(F("  document.getElementById('best').textContent=best?best+' ms':'–';"));
   client.println(F("  document.getElementById('ok').textContent=p[4]||'0';"));
   client.println(F("  document.getElementById('fs').textContent=p[5]||'0';"));
-  client.println(F("  const hist=p.slice(6).map(Number).filter(n=>n>0);"));
+  client.println(F("  const hist=p.slice(8).map(Number).filter(n=>n>0);"));
   client.println(F("  const max=Math.max(1000,...hist);"));
   client.println(F("  const B=document.getElementById('bars'); B.innerHTML='';"));
   client.println(F("  hist.forEach((ms,i)=>{"));
-  client.println(F("   const row=document.createElement('div'); row.className='bar-row';"));
-  client.println(F("   row.innerHTML='<span>#'+(i+1)+'</span><div class=\"bar\" style=\"width:'+(ms/max*100)+'%\"></div><span>'+ms+' ms</span>';"));
+  client.println(F("   const isB=best&&ms===best;"));
+  client.println(F("   const row=document.createElement('div'); row.className='bar-row'+(isB?' best':'');"));
+  client.println(F("   row.innerHTML='<span>'+(isB?'nejlepší':'#'+(i+1))+'</span><div class=\"bar\" style=\"width:'+(ms/max*100)+'%\"></div><span>'+ms+' ms</span>';"));
   client.println(F("   B.appendChild(row);"));
   client.println(F("  });"));
   client.println(F(" }).catch(()=>{}).finally(()=>setTimeout(loopData,200));"));
@@ -302,11 +382,11 @@ void setup() {
   }
   randomSeed((unsigned long)(micros() ^ (unsigned long)(ax * 1000) ^ (unsigned long)(ay * 1000)));
 
-  allLightsOff();
   armJerkCooldown();
   phase = PHASE_START;
   phaseStartMs = millis();
-  Serial.println(F(">>> Škubnutím spusť první pokus."));
+  updateReadyLights();
+  Serial.println(F(">>> Připraven — škubnutím START."));
 }
 
 void loop() {
@@ -316,7 +396,14 @@ void loop() {
   switch (phase) {
 
     case PHASE_START:
+      updateReadyLights();
       if (jerked) {
+        beginGoFlash();
+      }
+      break;
+
+    case PHASE_GO_FLASH:
+      if ((now - phaseStartMs) >= GO_FLASH_MS) {
         startLighting();
       }
       break;
@@ -326,6 +413,7 @@ void loop() {
         phase = PHASE_FALSE_START;
         phaseStartMs = now;
         falseStartCount++;
+        lightsOn = 0;
         allLightsOff();
         Serial.println(F("PŘEDČASNÁ REAKCE během rozsvícení!"));
         break;
@@ -354,6 +442,7 @@ void loop() {
         phase = PHASE_FALSE_START;
         phaseStartMs = now;
         falseStartCount++;
+        lightsOn = 0;
         allLightsOff();
         Serial.println(F("PŘEDČASNÁ REAKCE před zhasnutím!"));
         break;
@@ -366,26 +455,25 @@ void loop() {
         phase = PHASE_MEASURE;
         imuReady = false;
         jerkIgnoreUntilMs = millis() + 80;
-        Serial.println(F("ZHASNUTO! Škubni co nejdřív..."));
+        Serial.println(F("ZHASNUTO! Teď škubni (měření)..."));
       }
       break;
 
     case PHASE_MEASURE:
       if (jerked) {
         reactionTimeMs = millis() - reactionStartMs;
-        recordValidResult(reactionTimeMs);
+        lastWasNewBest = recordValidResult(reactionTimeMs);
         phase = PHASE_RESULT;
         phaseStartMs = now;
-
-        for (uint8_t i = 0; i < LIGHT_COUNT; i++) {
-          np.neoPixelSetValue(LIGHT_LEDS[i], 0, 120, 0, false);
-        }
-        np.neoPixelShow();
         lightsOn = LIGHT_COUNT;
+        showResultLights(lastWasNewBest);
 
         Serial.print(F("Reakční čas: "));
         Serial.print(reactionTimeMs);
         Serial.println(F(" ms"));
+        if (lastWasNewBest) {
+          Serial.println(F(">>> Nový rekord!"));
+        }
       }
       break;
 
