@@ -1,31 +1,31 @@
 // LED hra - Arduino Nano RP2040 Connect + LED pásek (64 diod na D4) + vestavěný LSM6DSOX
-// Komunikace se stránkou: USB (Serial 115200) NEBO WiFi (HTTP + Server-Sent Events, port 80)
+// Komunikace se stránkou: USB (Serial 115200) NEBO WiFi (Arduino samo vytvoří WiFi síť)
 //
 //   Arduino -> stránka:  HIT 1 / HIT 2          (trefa hráče 1 / 2)
 //   stránka -> Arduino:  START, END, LEVEL n, MODE solo|versus|coop
 //
-// WiFi:  GET /events          -> stálé spojení, Arduino posílá "HIT n"
-//        GET /cmd?c=START     -> příkaz (mezera = %20)
-// Po připojení vypíše IP adresu do Serial monitoru.
+// WiFi: Arduino vytvoří vlastní síť (access point). Počítač se na ni připojí
+//       a stránka se spojí s adresou 192.168.4.1
+//       GET /events          -> stálé spojení, Arduino posílá "HIT n"
+//       GET /cmd?c=START     -> příkaz (mezera = %20)
 
 #include <WiFiNINA.h>          // WiFi čip na Nano RP2040 Connect
 #include <NeoPixelConnect.h>   // knihovna pro led pásek
 #include <Arduino_LSM6DSOX.h>  // knihovna pro čtení náklonu
 
-// ====== NASTAV SVOJI WIFI (2,4 GHz) ======
-const char WIFI_SSID[] = "NAZEV_WIFI";
-const char WIFI_PASS[] = "HESLO_WIFI";
-// Pevná IP (volitelné, aby se neměnila) - odkomentuj a uprav podle své sítě:
-// IPAddress STATIC_IP(192, 168, 1, 50);
-// ==========================================
+// ====== WIFI, KTEROU ARDUINO VYTVOŘÍ ======
+const char AP_SSID[] = "LED-HRA";        // jméno sítě, kterou uvidíš v počítači
+const char AP_PASS[] = "ledhra1234";     // heslo (min. 8 znaků)
+IPAddress AP_IP(192, 168, 4, 1);         // adresa Arduina v této síti
+// ===========================================
 
 #define NUM_LEDS 64            // délka pásku
 
 NeoPixelConnect np(4, NUM_LEDS, pio0, 0);   // pásek na digitálním pinu D4
 WiFiServer server(80);
+bool apOk = false;
 WiFiClient sse;                              // klient odebírající události (stránka)
 unsigned long lastKeepAlive = 0;
-unsigned long lastWifiTry = 0;
 
 // barvy cílové zóny: hráč 1 = zelená, hráč 2 = fialová
 const uint8_t ZR[2] = {0, 40};
@@ -82,26 +82,24 @@ void sendHit(int p) {
   }
 }
 
-// ---------- WiFi ----------
-bool connectWifi(unsigned long timeoutMs) {
-  np.neoPixelSetValue(0, 60, 40, 0, true);      // žlutá dioda = připojuji
-#ifdef STATIC_IP
-  WiFi.config(STATIC_IP);
-#endif
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < timeoutMs) delay(250);
-  np.neoPixelFill(0, 0, 0, true);
-  if (WiFi.status() == WL_CONNECTED) {
-    server.begin();
-    Serial.print("WiFi OK, IP: ");
-    Serial.println(WiFi.localIP());
-    np.neoPixelFill(0, 40, 0, true); delay(300);   // zelený záblesk = připojeno
-    return true;
+// ---------- WiFi (vlastní síť Arduina) ----------
+bool startAP() {
+  np.neoPixelSetValue(0, 60, 40, 0, true);      // žlutá dioda = spouštím WiFi
+  WiFi.config(AP_IP);
+  int st = WiFi.beginAP(AP_SSID, AP_PASS);
+  if (st != WL_AP_LISTENING) {
+    Serial.println("Nepodarilo se vytvorit WiFi (hra funguje pres USB).");
+    np.neoPixelFill(60, 0, 0, true); delay(300);  // červený záblesk = chyba
+    return false;
   }
-  Serial.println("WiFi se nepodarilo pripojit (hra funguje pres USB).");
-  np.neoPixelFill(60, 0, 0, true); delay(300);     // červený záblesk = chyba
-  return false;
+  delay(1000);
+  server.begin();
+  Serial.print("WiFi \"");
+  Serial.print(AP_SSID);
+  Serial.print("\" bezi, adresa: ");
+  Serial.println(WiFi.localIP());
+  np.neoPixelFill(0, 40, 0, true); delay(300);     // zelený záblesk = WiFi běží
+  return true;
 }
 
 String urlDecode(const String &s) {
@@ -167,17 +165,15 @@ void setup() {
   if (WiFi.status() == WL_NO_MODULE) {
     Serial.println("WiFi modul nenalezen!");
   } else {
-    connectWifi(15000);
+    apOk = startAP();
   }
   randomSeed(analogRead(A0));
   newTarget();
 }
 
 void loop() {
-  // 0) WiFi: případné znovupřipojení a obsluha požadavků
-  if (WiFi.status() != WL_CONNECTED) {
-    if (millis() - lastWifiTry > 20000) { lastWifiTry = millis(); connectWifi(5000); }
-  } else {
+  // 0) WiFi: obsluha požadavků ze stránky
+  if (apOk) {
     handleHttp();
     if (sse && sse.connected() && millis() - lastKeepAlive > 10000) {
       sse.print(": ping\n\n");                  // udržuje spojení při životě

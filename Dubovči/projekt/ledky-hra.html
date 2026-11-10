@@ -149,7 +149,7 @@ async function readLoop(){
 function wifiOff(){if(es)es.close();es=null;wifiBase=null;$('wifi').textContent='Připojit Arduino (WiFi)';$('wifi').classList.remove('on');}
 function connectWifi(){
   if(es){wifiOff();status('WiFi odpojeno.');return;}
-  const ip=(prompt('IP adresa Arduina (vypíše ji Serial monitor po připojení k WiFi):',localStorage.getItem('ledky-ip')||'')||'').trim();
+  const ip=(prompt('IP adresa Arduina (Arduino vytvoří WiFi LED-HRA; výchozí je 192.168.4.1):','192.168.4.1')||'').trim();
   if(!ip)return;
   try{localStorage.setItem('ledky-ip',ip)}catch(e){}
   wifiBase='http://'+ip;status('Připojuji se k '+ip+' …');
@@ -157,7 +157,7 @@ function connectWifi(){
   es.onopen=()=>{$('wifi').textContent='Arduino připojeno (WiFi)';$('wifi').classList.add('on');status('Arduino připojeno přes WiFi. Zmáčkni Start.');};
   es.onmessage=e=>{if(writer)return; // pokud je zároveň USB, počítej trefy jen z něj
     const m=/^HIT\s*([12])$/i.exec(e.data.trim());if(m)hit(+m[1]-1);};
-  es.onerror=()=>{if(es&&es.readyState===2){wifiOff();status('WiFi spojení selhalo. Zkontroluj IP adresu a že jsi ve stejné síti.');}
+  es.onerror=()=>{if(es&&es.readyState===2){wifiOff();status('WiFi spojení selhalo. Zkontroluj, že jsi připojený k WiFi LED-HRA.');}
     else if(es){$('wifi').textContent='WiFi: obnovuji spojení…';$('wifi').classList.remove('on');}};
 }
 
