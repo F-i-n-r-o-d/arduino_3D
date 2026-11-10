@@ -3,9 +3,10 @@
 #include <Arduino_LSM6DSOX.h>
 #include <WiFiNINA.h>
 #include <SPI.h>
+#include <math.h>
 
 #define POCET_LED 16
-#define PIN_LED 4
+#define PIN_LED 4       
 #define SMER_X 1
 
 NeoPixelConnect np(PIN_LED, POCET_LED, pio0, 0);
@@ -128,9 +129,10 @@ void web() {
 
   String radek = "";
   String prvni = "";
+
   unsigned long zacatek = millis();
 
-  while (client.connected() && millis() - zacatek < 300) {
+  while (client.connected() && millis() - zacatek < 500) {
 
     while (client.available()) {
 
@@ -195,7 +197,6 @@ void cekej(unsigned long ms) {
   unsigned long zacatek = millis();
 
   while (millis() - zacatek < ms) {
-
     cti();
     web();
     delay(5);
@@ -207,23 +208,29 @@ void setup() {
   Serial.begin(115200);
   delay(1500);
 
-  if (!IMU.begin()) {
+  Serial.println("Spoustim hru...");
 
-    Serial.println("Chyba IMU!");
+  // Inicializace akcelerometru
+
+  if (!IMU.begin()) {
+    Serial.println("CHYBA IMU!");
 
     while (1) {
       delay(100);
     }
   }
 
-  Serial.print("Vytvarim Wi-Fi sit: ");
+  Serial.println("IMU OK");
+
+  // Inicializace Wi-Fi
+
+  Serial.print("Vytvarim Wi-Fi: ");
   Serial.println(ssid);
 
   int stav = WiFi.beginAP(ssid, pass);
 
   if (stav != WL_AP_LISTENING) {
-
-    Serial.println("Chyba Wi-Fi!");
+    Serial.println("CHYBA WIFI!");
 
     while (1) {
       delay(100);
@@ -234,17 +241,27 @@ void setup() {
 
   server.begin();
 
-  Serial.print("Web server bezi na: http://");
+  Serial.print("Web server: http://");
   Serial.println(WiFi.localIP());
+
+  // Nahodny generator
 
   randomSeed(analogRead(A0));
 
-  svit(0, 0, 20, 0);
+  // Test LED
+
+  for (int i = 0; i < POCET_LED; i++) {
+    np.neoPixelSetValue(i, 0, 20, 0, false);
+  }
+
+  np.neoPixelShow();
+
+  Serial.println("LED TEST OK");
 }
 
 void loop() {
 
-  // 1. Ukazani nahodneho cile
+  // 1. Nahodny cil
 
   cil = random(0, POCET_LED);
 
@@ -255,7 +272,7 @@ void loop() {
 
   cekej(2000);
 
-  // Kalibrace rovne tyce
+  // Kalibrace
 
   bx = xf;
   by = yf;
@@ -301,7 +318,6 @@ void loop() {
       faze = 2;
 
       if (!predchoziZamknuti) {
-
         drziOd = millis();
         predchoziZamknuti = true;
       }
@@ -354,6 +370,8 @@ void loop() {
   Serial.print("Presnost: ");
   Serial.print(presnost);
   Serial.println(" %");
+
+  // Vysledek na LED
 
   np.neoPixelClear(false);
 
