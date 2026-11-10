@@ -140,34 +140,15 @@ bool apListening() {
 }
 
 bool startAP() {
-  if (WiFi.status() == WL_NO_MODULE) {
-    Serial.println("CHYBA: Wi-Fi modul nenalezen (WL_NO_MODULE).");
+  Serial.print("Vytvarim AP: ");
+  Serial.println(ssid);
+
+  if (WiFi.beginAP(ssid, pass) != WL_AP_LISTENING) {
+    Serial.println("Chyba AP!");
     return false;
   }
-
-  Serial.print("Firmware Wi-Fi modulu: ");
-  Serial.print(WiFi.firmwareVersion());
-  Serial.print(" (nejnovejsi: ");
-  Serial.print(WIFI_FIRMWARE_LATEST_VERSION);
-  Serial.println(")");
-
-  WiFi.config(IPAddress(192, 168, 4, 1));
-  int st = WiFi.beginAP(ssid, pass);
-  Serial.print("beginAP vratilo: ");
-  Serial.println(st);              // 7 = OK, 9 = AP_FAILED
-
-  unsigned long t0 = millis();
-  while (millis() - t0 < 10000) {
-    if (apListening()) {
-      Serial.println("AP bezi.");
-      return true;
-    }
-    delay(200);
-  }
-
-  Serial.print("AP se nespustilo, status = ");
-  Serial.println(WiFi.status());
-  return false;
+  delay(2000);   // pocka, nez se AP ustali
+  return true;
 }
 
 // ---------- Pomocne funkce pro parametry ----------
