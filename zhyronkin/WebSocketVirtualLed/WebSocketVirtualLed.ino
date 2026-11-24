@@ -7,34 +7,40 @@
 
 NeoPixelConnect np(4, MAXIMUM_NUM_NEOPIXELS, pio0, 0);
 
-int randNumber;
-int citac = 0;
-float x, y, z;
-int posledniHodnota = -1;
+// Nastavení pohybu
+unsigned long intervalPohybu = 1000;   // slider, teď slouží jako citlivost
+
+float poloha = 32.0;        // přesná poloha bodu (0-63)
+float rychlost = 0.0;       // rychlost bodu v LED/s
 unsigned long posledniCas = 0;
-float rychlost = 0;
-int smer = 0;
-float odrazPozice = 0.0f;
-float odrazRychlost = 0.0f;
-int posledniSmer = 0;
-int level = 1;
-int score = 0;
-int bestScore = 0;
-int targetSize = 10;
-float targetPos = 0.0f;
-bool targetMovingRight = true;
-char ssid[] = "[(67+67) + 6*7]/7 = xx,xxxxxx";        
-char pass[] = "25,142857";    
+
+int polohaKulicky = 32;
+int randNumber;
+float casVCili = 0.0;       // sekundy strávené v cíli při správné rychlosti
+
+float x = 0, y = 0, z = 0;
+float gx = 0, gy = 0, gz = 0;   // gyroskop (°/s)
+
+// Ladění fyziky
+const int   SMER = 1;               // změň na -1, pokud se bod hýbe opačně
+const float GYRO_PRAH = 5.0;        // mrtvá zóna (°/s), potlačí šum
+const float ZISK = 0.6;             // LED/s na 1 °/s
+const float MAX_RYCHLOST = 60.0;    // max rychlost bodu (LED/s)
+const float UTLUM_ODRAZU = 0.6;     // kolik rychlosti zůstane po odrazu
+const float TAU = 0.12;             // vyhlazení (s) - plynulost pohybu
+const float LIMIT_V_CILI = 15.0;    // v cíli se počítá jen pomalejší pohyb
+
+char ssid[] = "RP2040";
+char pass[] = "ArduinoWeb";
 
 WiFiServer server(80);
-
-int mapFloat(float val, float in_min, float in_max, int out_min, int out_max) {
-  return (val - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-}
 
 void setup() {
   Serial.begin(115200);
   delay(1500);
+
+  randomSeed(analogRead(A0));
+  randNumber = random(0, 54);
 
   if (!IMU.begin()) {
     Serial.println("Chyba IMU!");
@@ -43,205 +49,252 @@ void setup() {
 
   Serial.print("Vytvarim AP: ");
   Serial.println(ssid);
+
   if (WiFi.beginAP(ssid, pass) != WL_AP_LISTENING) {
     Serial.println("Chyba AP!");
     while (1);
   }
 
   delay(2000);
+
   server.begin();
+
   Serial.print("Web server bezi na http://");
   Serial.println(WiFi.localIP());
 
   randNumber = random(0, 54);
-  targetPos = randNumber;
+  posledniCas = millis();
 }
 
 void loop() {
-  // 1. Cteni akcelerometru
+
+  // 1. Čtení senzorů
   if (IMU.accelerationAvailable()) {
     IMU.readAcceleration(x, y, z);
   }
+  if (IMU.gyroscopeAvailable()) {
+    IMU.readGyroscope(gx, gy, gz);
+  }
 
-  int hodnota = mapFloat(x, -0.5, 0.5, 0, 63);
-  if (hodnota > 63) hodnota = 63;
-  if (hodnota < 0) hodnota = 0;
-
-  // 2. Vypocet rychlosti a smeru pohybu
+  // 2. Čas
   unsigned long aktualniCas = millis();
-  if (posledniHodnota == -1) {
-    posledniHodnota = hodnota;
-    posledniCas = aktualniCas;
-  } else {
-    unsigned long uplynulyCas = aktualniCas - posledniCas;
-    if (uplynulyCas > 0) {
-      int zmenaPolohy = hodnota - posledniHodnota;
+  float dt = (aktualniCas - posledniCas) / 1000.0;
+  posledniCas = aktualniCas;
+  if (dt > 0.1) dt = 0.1;
 
-      rychlost = abs(zmenaPolohy) * 1000.0 / uplynulyCas;
-      if (zmenaPolohy > 0) {
-        smer = 1;
-      } else if (zmenaPolohy < 0) {
-        smer = -1;
-      } else {
-        smer = 0;
-      }
+  // 3. Rychlost tyče -> cílová rychlost bodu
+  float omega = SMER * gy;                    // pokud tyč otáčíš kolem jiné osy, zkus gx / gz
+  if (fabs(omega) < GYRO_PRAH) omega = 0;
 
-      posledniHodnota = hodnota;
-      posledniCas = aktualniCas;
-    }
+  float citlivost = 1000.0 / intervalPohybu;  // slider: 300 ms = 3.3x, 3000 ms = 0.33x
+  float cil = constrain(omega * ZISK * citlivost, -MAX_RYCHLOST, MAX_RYCHLOST);
+
+  // Odraz při prudké změně směru tyče
+  if (cil * rychlost < 0 && fabs(rychlost) > 8 && fabs(cil) > 8) {
+    rychlost = -rychlost * UTLUM_ODRAZU;
   }
 
-  // 3. Odrazovy efekt a pohyb cile
-  float odrazSil = constrain(abs(rychlost) * 0.55f, 0.0f, 7.0f);
-  if (smer == 0) {
-    odrazRychlost *= 0.7f;
-  } else {
-    if (posledniSmer != smer) {
-      odrazRychlost = -smer * (odrazSil + 3.5f);
-      odrazPozice = hodnota;
-      posledniSmer = smer;
-    }
-    odrazRychlost += (smer * odrazSil - odrazRychlost) * 0.18f;
-  }
-  odrazPozice += odrazRychlost;
-  if (odrazPozice < 0) {
-    odrazPozice = 0;
-    odrazRychlost *= -0.4f;
-  }
-  if (odrazPozice > 63) {
-    odrazPozice = 63;
-    odrazRychlost *= -0.4f;
-  }
-  int odrazIndex = (int)round(odrazPozice);
+  // Plynulé dotažení rychlosti k cílové (trhavý pohyb se vyhladí)
+  float alpha = dt / (TAU + dt);
+  rychlost += (cil - rychlost) * alpha;
 
-  targetPos += (targetMovingRight ? 1.0f : -1.0f) * (0.5f + level * 0.18f);
-  if (targetPos <= 0) {
-    targetPos = 0;
-    targetMovingRight = true;
-  }
-  if (targetPos >= 64 - targetSize) {
-    targetPos = 64 - targetSize;
-    targetMovingRight = false;
-  }
-  randNumber = (int)targetPos;
+  // 4. Pohyb a odraz od konců pásku
+  poloha += rychlost * dt;
 
-  // 4. Vykresleni fyzickeho LED pasku
+  if (poloha < 0) {
+    poloha = 0;
+    rychlost = -rychlost * UTLUM_ODRAZU;
+  }
+  if (poloha > 63) {
+    poloha = 63;
+    rychlost = -rychlost * UTLUM_ODRAZU;
+  }
+
+  polohaKulicky = (int)(poloha + 0.5);
+
+  bool vCili = (polohaKulicky >= randNumber && polohaKulicky < randNumber + 10);
+  bool rychlostOk = fabs(rychlost) <= LIMIT_V_CILI;
+
+  // 5. Vykreslení LED pásku (zobrazí se najednou na konci)
   for (int i = 0; i < 64; i++) {
-    if (i == hodnota) {
-      np.neoPixelSetValue((uint8_t)i, 120, 0, 0, true);   // Cervena kulicka
-    } else if (i == odrazIndex && abs(i - hodnota) > 1) {
-      np.neoPixelSetValue((uint8_t)i, 0, 220, 255, true); // Modro-zeleny odraz
-    } else if (i >= randNumber && i < randNumber + targetSize) {
-      np.neoPixelSetValue((uint8_t)i, 20, 20, 0, true);   // Zluty cil
-    } else {
-      np.neoPixelSetValue((uint8_t)i, 0, 0, 10, true);    // Modre pozadi
+    if (i == polohaKulicky) {
+      if (rychlostOk) np.neoPixelSetValue((uint8_t)i, 0, 120, 0, false);   // zeleně = správná rychlost
+      else            np.neoPixelSetValue((uint8_t)i, 120, 0, 0, false);   // červeně = moc rychle
+    }
+    else if (i >= randNumber && i < randNumber + 10) {
+      np.neoPixelSetValue((uint8_t)i, 20, 20, 0, false);
+    }
+    else {
+      np.neoPixelSetValue((uint8_t)i, 0, 0, 10, false);
     }
   }
+  np.neoPixelShow();
 
-  // 5. Herni logika
-  if (hodnota >= randNumber && hodnota < randNumber + targetSize) {
-    citac++;
-  } else {
-    citac = 0;
+  // 6. Herní logika: body se počítají jen při správné poloze I rychlosti
+  if (vCili && rychlostOk) {
+    casVCili += dt;
   }
 
-  if (citac > 25) {
-    score += 10 + level * 5;
-    if (score > bestScore) bestScore = score;
-    level++;
-    targetSize = max(6, 10 - (level / 3));
-    targetPos = random(0, 64 - targetSize);
-    targetMovingRight = random(0, 2) == 0;
-    randNumber = (int)targetPos;
-    citac = 0;
+  if (casVCili > 1.5) {
+    randNumber = random(0, 54);
+    casVCili = 0;
   }
 
+  // 7. Web server
   WiFiClient client = server.available();
+
   if (client) {
+
     String currentLine = "";
+    String requestLine = "";
+
     bool isDataRequest = false;
+    bool isIntervalRequest = false;
 
     while (client.connected()) {
+
       if (client.available()) {
+
         char c = client.read();
 
         if (c == '\n') {
+
+          // Prvni radek HTTP pozadavku
+          if (requestLine.length() == 0) {
+            requestLine = currentLine;
+
+            // Telemetrie
+            if (requestLine.startsWith("GET /data ")) {
+              isDataRequest = true;
+            }
+
+            // Nastaveni intervalu (citlivosti) ze slideru
+            if (requestLine.startsWith("GET /setInterval?value=")) {
+
+              int zacatek = requestLine.indexOf("value=") + 6;
+              int konec = requestLine.indexOf(' ', zacatek);
+
+              String hodnotaText =
+                requestLine.substring(zacatek, konec);
+
+              int novaHodnota = hodnotaText.toInt();
+
+              if (novaHodnota >= 300 && novaHodnota <= 3000) {
+                intervalPohybu = novaHodnota;
+
+                Serial.print("Novy interval: ");
+                Serial.println(intervalPohybu);
+              }
+
+              isIntervalRequest = true;
+            }
+          }
+
           if (currentLine.length() == 0) {
+
+            // Odpoved na pozadavek
             if (isDataRequest) {
+
               client.println("HTTP/1.1 200 OK");
               client.println("Content-Type: text/plain");
               client.println("Access-Control-Allow-Origin: *");
-              client.println("Connection: close\r\n");
-              
-              client.print(x, 2); client.print(",");
-              client.print(y, 2); client.print(",");
-              client.print(z, 2); client.print(",");
-              client.print(hodnota); client.print(",");
-              client.print(randNumber); client.print(",");
-              client.print(rychlost, 2); client.print(",");
-              client.print(smer); client.print(",");
-              client.print(odrazIndex); client.print(",");
-              client.print(level); client.print(",");
-              client.print(score); client.print(",");
-              client.println(bestScore);
-            } else {
+              client.println("Connection: close");
+              client.println();
+
+              client.print(x, 2);
+              client.print(",");
+              client.print(y, 2);
+              client.print(",");
+              client.print(z, 2);
+              client.print(",");
+              client.print(polohaKulicky);
+              client.print(",");
+              client.println(randNumber);
+
+            }
+
+            else if (isIntervalRequest) {
+
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-Type: text/plain");
+              client.println("Access-Control-Allow-Origin: *");
+              client.println("Connection: close");
+              client.println();
+
+              client.println("OK");
+            }
+
+            else {
+
+              // HTML stranka
               client.println("HTTP/1.1 200 OK");
               client.println("Content-Type: text/html; charset=UTF-8");
-              client.println("Connection: close\r\n");
+              client.println("Connection: close");
+              client.println();
 
               client.println(F("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Rehabko Monitor</title>"));
+
               client.println(F("<style>"));
               client.println(F("body{font-family:Segoe UI,sans-serif;background:#181818;color:#eee;text-align:center;padding:20px;}"));
               client.println(F(".track{width:640px;height:46px;background:#0d1117;margin:35px auto;border-radius:23px;position:relative;border:2px solid #30363d;box-shadow:inset 0 2px 6px #000;}"));
               client.println(F("#target{position:absolute;height:100%;background:#e3b341;opacity:0.65;border-radius:8px;}"));
-              client.println(F("#reflection{position:absolute;width:24px;height:24px;background:#73e4ff;border-radius:50%;top:11px;box-shadow:0 0 12px #73e4ff;opacity:0.9;transition:left 0.04s ease-out;}"));
-              client.println(F("#ball{position:absolute;width:34px;height:34px;background:#f85149;border-radius:50%;top:6px;box-shadow:0 0 12px #f3534a;transition:left 0.04s ease-out;}"));
+              client.println(F("#ball{position:absolute;width:34px;height:34px;background:#f85149;border-radius:50%;top:6px;box-shadow:0 0 12px #f85149;transition:left 0.04s ease-out;}"));
               client.println(F(".card{background:#21262d;display:inline-block;padding:15px 30px;border-radius:10px;margin:10px;border:1px solid #30363d;}"));
               client.println(F("h1{margin-bottom:5px;} b{color:#58a6ff;font-size:1.3em;}"));
               client.println(F("</style></head><body>"));
 
-              client.println(F("<h1>Rehabilitační pomůcka</h1><p>Živý monitor náklonu</p>"));
-              client.println(F("<div class='track'><div id='target'></div><div id='reflection'></div><div id='ball'></div></div>"));
-              client.println(F("<div class='card'><p>Náklon X: <br><b id='valX'>0.00</b> g</p></div>"));
-              client.println(F("<div class='card'><p>Poloha diody: <br><b id='valD'>0</b> / 63</p></div>"));
-              client.println(F("<div class='card'><p>Rychlost: <br><b id='valSpeed'>0.00</b> LED/s</p></div>"));
-              client.println(F("<div class='card'><p>Směr: <br><b id='valDirection'>stojí</b></p></div>"));
-              client.println(F("<div class='card'><p>Odraz: <br><b id='valReflection'>0</b></p></div>"));
-              client.println(F("<div class='card'><p>Level: <br><b id='valLevel'>1</b></p></div>"));
-              client.println(F("<div class='card'><p>Skóre: <br><b id='valScore'>0</b></p></div>"));
+              client.println(F("<h1>Rehabilitacni pomucka</h1><p>Zivy monitor naklonu</p>"));
 
+              client.println(F("<div class='track'><div id='target'></div><div id='ball'></div></div>"));
+
+              client.println(F("<div class='card'><p>Naklon X:<br><b id='valX'>0.00</b> g</p></div>"));
+
+              client.println(F("<div class='card'><p>Poloha diody:<br><b id='valD'>0</b> / 63</p></div>"));
+
+              client.println(F("<div class='card'>"));
+              client.println(F("<p>Citlivost (nizsi = citlivejsi):</p>"));
+              client.println(F("<input type='range' id='intervalSlider' min='300' max='3000' value='1000' step='100' style='width:300px;'>"));
+              client.println(F("<p><b id='intervalValue'>1000</b></p>"));
+              client.println(F("</div>"));
+
+              // JavaScript
               client.println(F("<script>"));
+
               client.println(F("function loopData(){"));
-              client.println(F("  fetch('/data').then(r=>r.text()).then(txt=>{"));
-              client.println(F("    let d = txt.split(',');"));
-              client.println(F("    document.getElementById('valX').innerText = d[0];"));
-              client.println(F("    document.getElementById('valD').innerText = d[3];"));
-              client.println(F("    document.getElementById('valSpeed').innerText = d[5];"));
-              client.println(F("    document.getElementById('valDirection').innerText = d[6] > 0 ? 'doprava' : (d[6] < 0 ? 'doleva' : 'stojí');"));
-              client.println(F("    document.getElementById('valReflection').innerText = d[7];"));
-              client.println(F("    document.getElementById('valLevel').innerText = d[8];"));
-              client.println(F("    document.getElementById('valScore').innerText = d[9];"));
-              client.println(F("    document.getElementById('ball').style.left = (parseFloat(d[3]) * 9.5) + 'px';"));
-              client.println(F("    document.getElementById('reflection').style.left = (parseFloat(d[7]) * 9.5) + 'px';"));
-              client.println(F("    document.getElementById('target').style.left = (parseFloat(d[4]) * 10) + 'px';"));
-              client.println(F("    document.getElementById('target').style.width = '100px';"));
-              client.println(F("  }).catch(()=>{}).finally(()=>{ setTimeout(loopData, 35); });"));
+              client.println(F("fetch('/data').then(r=>r.text()).then(txt=>{"));
+              client.println(F("let d=txt.split(',');"));
+              client.println(F("document.getElementById('valX').innerText=d[0];"));
+              client.println(F("document.getElementById('valD').innerText=d[3];"));
+              client.println(F("document.getElementById('ball').style.left=(parseFloat(d[3])*9.5)+'px';"));
+              client.println(F("document.getElementById('target').style.left=(parseFloat(d[4])*10)+'px';"));
+              client.println(F("document.getElementById('target').style.width='100px';"));
+              client.println(F("}).catch(()=>{}).finally(()=>{setTimeout(loopData,35);});"));
               client.println(F("}"));
+
+              // Slider -> Arduino
+              client.println(F("document.getElementById('intervalSlider').addEventListener('input',function(){"));
+              client.println(F("let hodnota=this.value;"));
+              client.println(F("document.getElementById('intervalValue').innerText=hodnota;"));
+              client.println(F("fetch('/setInterval?value='+hodnota).catch(error=>console.log(error));"));
+              client.println(F("});"));
+
               client.println(F("loopData();"));
+
               client.println(F("</script></body></html>"));
             }
+
             break;
+
           } else {
             currentLine = "";
           }
+
         } else if (c != '\r') {
           currentLine += c;
-          if (currentLine.endsWith("GET /data")) {
-            isDataRequest = true;
-          }
         }
       }
     }
+
     client.stop();
   }
 }
