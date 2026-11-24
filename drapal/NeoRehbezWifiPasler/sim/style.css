@@ -50,17 +50,29 @@ kbd {
   margin-top: 6px;
 }
 
+.card.best-card {
+  border: 2px solid #e6b422;
+  background: #2a2410;
+  box-shadow: 0 0 14px #e6b42255;
+}
+
+.card.best-card b {
+  font-size: 2em;
+  color: #ffd54a;
+}
+
 .lights {
   display: flex;
   justify-content: center;
-  gap: 10px;
-  margin: 24px 0;
+  gap: 18px;
+  margin: 24px auto;
+  max-width: 640px;
 }
 
 .dot {
-  width: 28px;
+  width: 52px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: 8px;
   background: #333;
   border: 2px solid #555;
   transition: background 0.08s, box-shadow 0.08s;
@@ -68,14 +80,32 @@ kbd {
 
 .dot.on {
   background: #e11;
-  box-shadow: 0 0 12px #e11;
+  box-shadow: 0 0 14px #e11;
   border-color: #f66;
+}
+
+.dot.ready {
+  background: #246;
+  box-shadow: 0 0 10px #38c;
+  border-color: #4af;
+}
+
+.dot.go {
+  background: #ddd;
+  box-shadow: 0 0 12px #fff;
+  border-color: #fff;
 }
 
 .dot.green {
   background: #3a7;
   box-shadow: 0 0 12px #3a7;
   border-color: #5c9;
+}
+
+.dot.gold {
+  background: #e6b422;
+  box-shadow: 0 0 14px #e6b422;
+  border-color: #ffd54a;
 }
 
 #bars {
@@ -92,7 +122,7 @@ kbd {
 }
 
 .bar-row span {
-  width: 52px;
+  width: 72px;
   font-size: 0.9em;
   color: #aaa;
 }
@@ -102,6 +132,15 @@ kbd {
   background: #3a7;
   border-radius: 4px;
   min-width: 2px;
+}
+
+.bar-row.best .bar {
+  background: #e6b422;
+}
+
+.bar-row.best span {
+  color: #ffd54a;
+  font-weight: 700;
 }
 
 #status {
