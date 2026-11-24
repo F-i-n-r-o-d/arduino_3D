@@ -57,7 +57,7 @@ button:disabled{opacity:.45;cursor:default}
   <button id="connectDevice" type="button">Připojit k tyči</button>
   <button id="useDemo" type="button">Zpět do simulace</button>
 </div>
-<p class="source-help" id="connectionHelp">Pokud tyč není připojená, můžeš pokračovat v simulaci.</p>
+<p class="source-help"><a id="directLink" href="http://192.168.4.1/" style="color:#58a6ff">Otevřít web přímo z tyče</a></p><p class="source-help" id="connectionHelp">Pokud tyč není připojená, můžeš pokračovat v simulaci.</p>
 </main><script>
 'use strict';
 // Pravidla jsou stejna v nahledu i ve firmware. V zivem rezimu pocita body Arduino.
@@ -150,7 +150,6 @@ function recordCompleted(result, sourceMode) {
     const age = sourceMode === 'live' ? result.ageMs : 0;
     merged.set(key, {id: result.id, mode: sourceMode, score: result.score,
       points: [...result.points], date: new Date(Date.now() - age).toISOString()});
-    console.log('nejde ti to mrdko');
   }
   history = [...merged.values()].sort((a, b) => Date.parse(b.date) - Date.parse(a.date)).slice(0, HISTORY_LIMIT);
   try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); storageAvailable = true; }
@@ -338,7 +337,7 @@ function acceptSample(sample) {
 }
 async function request(url, method, currentVersion) {
   const controller = new AbortController(); pendingRequest = controller;
-  const timeout = setTimeout(() => controller.abort(), 3000);
+  const timeout = setTimeout(() => controller.abort(), 6000);
   try {
     const response = await fetch(url, {method, cache: 'no-store', signal: controller.signal});
     if (!response.ok) {
@@ -359,10 +358,10 @@ async function pollData(currentVersion) {
     if (mode === 'live' && currentVersion === version) {
       connectionOk = false; el('mode').textContent = 'Nelze načíst živá data z tyče';
       el('connectionHelp').textContent = (err.name === 'AbortError' ? 'Vypršel čas připojení.' : err.message) +
-        ' Zkontroluj Wi-Fi RP2040 a IP adresu. Nejspolehlivější je otevřít web přímo z Arduina.';
+        ' Připoj se k Wi-Fi RP2040 a otevři http://' + el('deviceIp').value.replace(/^https?:\/\//i, '') + '/ přímo v prohlížeči. Pokud /data nefunguje, zkontroluj sériový monitor.';
     }
   } finally {
-    if (mode === 'live' && currentVersion === version) pollTimer = setTimeout(() => pollData(currentVersion), 140);
+    if (mode === 'live' && currentVersion === version) pollTimer = setTimeout(() => pollData(currentVersion), 200);
   }
 }
 function startLive(url) {
@@ -386,6 +385,7 @@ el('startGame').addEventListener('click', async () => {
   }
 });
 el('deviceIp').value = isLocalPreview ? '192.168.4.1' : location.host;
+if (!isLocalPreview && location.protocol === 'http:') el('directLink').href = location.origin + '/';
 el('connectDevice').addEventListener('click', () => {
   let input = el('deviceIp').value.trim(); if (!input) return;
   if (!/^https?:\/\//i.test(input)) input = 'http://' + input;
@@ -393,6 +393,7 @@ el('connectDevice').addEventListener('click', () => {
     const parsed = new URL(input);
     if (parsed.protocol !== 'http:' || parsed.username || parsed.password ||
         parsed.pathname !== '/' || parsed.search || parsed.hash) throw Error('Zadej pouze adresu tyče, například 192.168.4.1');
+    el('directLink').href = parsed.origin + '/';
     startLive(parsed.origin === location.origin ? '/data' : parsed.origin + '/data');
   } catch (err) { el('connectionHelp').textContent = err.message; }
 });
