@@ -3,109 +3,53 @@
 #include <Arduino_LSM6DSOX.h>
 #include <WiFiNINA.h>
 #include <SPI.h>
-#include <math.h>
 
-// Nastaveni LED
-#define MAXIMUM_NUM_NEOPIXELS 64
+#define POCET_LED 16
 #define PIN_LED 4
-
-// Nastaveni hry
 #define SMER_X 1
-#define DOBA_ZAMKNUTI 1000
-#define DOBA_CILE 2000
-#define DOBA_VYSLEDEK 4000
 
-// Vyhlazeni pohybu podle funkcniho programu
-#define VYHLAZENI_X 0.15f
-#define VYHLAZENI_POL 0.25f
+NeoPixelConnect np(PIN_LED, POCET_LED, pio0, 0);
 
-NeoPixelConnect np(PIN_LED, MAXIMUM_NUM_NEOPIXELS, pio0, 0);
-
-// Wi-Fi
 char ssid[] = "RP2040";
 char pass[] = "ArduinoWeb";
 
 WiFiServer server(80);
 
-// Akcelerometr
 float x = 0, y = 0, z = 0;
 float xf = 0, yf = 0;
-
 float bx = 0, by = 0;
 
-// Pohyb kulicky
-float poloha = 31.5f;
-int kulicka = 32;
-
-// Stav hry
 int faze = 0;
 int cil = 0;
+int kulicka = 0;
 int presnost = 0;
-
-// --------------------------------------------------
-// Cteni akcelerometru a vyhlazeni hodnot
-// --------------------------------------------------
 
 void cti() {
   if (IMU.accelerationAvailable()) {
     IMU.readAcceleration(x, y, z);
 
-    xf += VYHLAZENI_X * (x - xf);
-    yf += VYHLAZENI_X * (y - yf);
+    xf = 0.8f * xf + 0.2f * x;
+    yf = 0.8f * yf + 0.2f * y;
   }
 }
 
-// --------------------------------------------------
-// Prevod desetinne hodnoty
-// --------------------------------------------------
+int mapFloat(float v, float in_min, float in_max,
+             int out_min, int out_max) {
 
-float mapFloat(float v, float in_min, float in_max,
-               float out_min, float out_max) {
+  float vysledek =
+      (v - in_min) * (out_max - out_min) /
+      (in_max - in_min) + out_min;
 
-  return (v - in_min) * (out_max - out_min) /
-         (in_max - in_min) + out_min;
+  return (int)round(vysledek);
 }
-
-// --------------------------------------------------
-// Vykresleni plynule kulicky
-// --------------------------------------------------
-
-void vykresliKulicku(float pozice, int r, int g, int b) {
-
-  np.neoPixelClear(false);
-
-  for (int i = 0; i < MAXIMUM_NUM_NEOPIXELS; i++) {
-
-    float w = 1.0f - fabsf(i - pozice);
-
-    if (w < 0) w = 0;
-
-    uint8_t cervena = (uint8_t)(r * w);
-    uint8_t zelena = (uint8_t)(g * w);
-    uint8_t modra = (uint8_t)(b * w);
-
-    np.neoPixelSetValue(i, cervena, zelena, modra, false);
-  }
-
-  np.neoPixelShow();
-}
-
-// --------------------------------------------------
-// Rozsviceni jednoho LED
-// --------------------------------------------------
 
 void svit(int p, int r, int g, int b) {
-
-  if (p < 0 || p >= MAXIMUM_NUM_NEOPIXELS) return;
+  if (p < 0 || p >= POCET_LED) return;
 
   np.neoPixelClear(false);
   np.neoPixelSetValue(p, r, g, b, false);
   np.neoPixelShow();
 }
-
-// --------------------------------------------------
-// HTML webova stranka
-// --------------------------------------------------
 
 void posliStranku(WiFiClient &client) {
 
@@ -119,7 +63,7 @@ void posliStranku(WiFiClient &client) {
   client.println(F("<title>Hra na paměť</title><style>"));
 
   client.println(F("body{font-family:Arial,sans-serif;background:#181818;color:#eee;text-align:center;padding:20px}"));
-  client.println(F(".pas{display:flex;gap:4px;max-width:900px;margin:30px auto;background:#0d1117;padding:14px;border-radius:14px;border:2px solid #30363d}"));
+  client.println(F(".pas{display:flex;gap:6px;max-width:640px;margin:30px auto;background:#0d1117;padding:14px;border-radius:14px;border:2px solid #30363d}"));
   client.println(F(".d{flex:1;aspect-ratio:1;border-radius:50%;background:#1f2430}"));
   client.println(F("#st{font-size:1.3em;font-weight:bold;min-height:36px}"));
   client.println(F(".card{background:#21262d;display:inline-block;padding:12px 24px;border-radius:10px;margin:8px;border:1px solid #30363d}"));
@@ -134,7 +78,7 @@ void posliStranku(WiFiClient &client) {
 
   client.println(F("<script>"));
 
-  client.println(F("var N=64,d=[],his=[],posledni='';"));
+  client.println(F("var N=16,d=[],his=[],posledni='';"));
   client.println(F("var pas=document.getElementById('pas');"));
 
   client.println(F("for(var i=0;i<N;i++){var e=document.createElement('div');e.className='d';pas.appendChild(e);d.push(e);}"));
@@ -177,22 +121,16 @@ void posliStranku(WiFiClient &client) {
   client.println(F("</script></body></html>"));
 }
 
-// --------------------------------------------------
-// Webovy server
-// --------------------------------------------------
-
 void web() {
 
   WiFiClient client = server.available();
-
   if (!client) return;
 
   String radek = "";
   String prvni = "";
-
   unsigned long zacatek = millis();
 
-  while (client.connected() && millis() - zacatek < 500) {
+  while (client.connected() && millis() - zacatek < 300) {
 
     while (client.available()) {
 
@@ -252,10 +190,6 @@ void web() {
   client.stop();
 }
 
-// --------------------------------------------------
-// Cekani pri zachovani weboveho serveru
-// --------------------------------------------------
-
 void cekej(unsigned long ms) {
 
   unsigned long zacatek = millis();
@@ -264,48 +198,32 @@ void cekej(unsigned long ms) {
 
     cti();
     web();
-
     delay(5);
   }
 }
-
-// --------------------------------------------------
-// Inicializace
-// --------------------------------------------------
 
 void setup() {
 
   Serial.begin(115200);
   delay(1500);
 
-  Serial.println("Spoustim hru...");
-
-  // Inicializace IMU
-
   if (!IMU.begin()) {
 
-    Serial.println("CHYBA IMU!");
+    Serial.println("Chyba IMU!");
 
     while (1) {
       delay(100);
     }
   }
 
-  Serial.println("IMU OK");
-
-  Serial.print("Frekvence akcelerometru: ");
-  Serial.println(IMU.accelerationSampleRate());
-
-  // Inicializace Wi-Fi
-
-  Serial.print("Vytvarim Wi-Fi: ");
+  Serial.print("Vytvarim Wi-Fi sit: ");
   Serial.println(ssid);
 
   int stav = WiFi.beginAP(ssid, pass);
 
   if (stav != WL_AP_LISTENING) {
 
-    Serial.println("CHYBA WIFI!");
+    Serial.println("Chyba Wi-Fi!");
 
     while (1) {
       delay(100);
@@ -316,54 +234,35 @@ void setup() {
 
   server.begin();
 
-  Serial.print("Web server: http://");
+  Serial.print("Web server bezi na: http://");
   Serial.println(WiFi.localIP());
-
-  // Nahodny generator
 
   randomSeed(analogRead(A0));
 
-  // Test LED
-
-  for (int i = 0; i < MAXIMUM_NUM_NEOPIXELS; i++) {
-
-    np.neoPixelSetValue(i, 0, 20, 0, false);
-  }
-
-  np.neoPixelShow();
-
-  Serial.println("LED TEST OK");
+  svit(0, 0, 20, 0);
 }
-
-// --------------------------------------------------
-// Hlavni program
-// --------------------------------------------------
 
 void loop() {
 
-  // 1. Nahodny cil
+  // 1. Ukazani nahodneho cile
 
-  cil = random(0, MAXIMUM_NUM_NEOPIXELS);
+  cil = random(0, POCET_LED);
 
   faze = 0;
   presnost = 0;
 
-  kulicka = 32;
-  poloha = 31.5f;
-
   svit(cil, 120, 60, 0);
 
-  // Zapamatovani cile
+  cekej(2000);
 
-  cekej(DOBA_CILE);
-
-  // 2. Kalibrace akcelerometru
+  // Kalibrace rovne tyce
 
   bx = xf;
   by = yf;
 
-  poloha = 31.5f;
-  kulicka = 32;
+  // 2. Hledani polohy
+
+  kulicka = POCET_LED / 2;
 
   unsigned long drziOd = 0;
   unsigned long vypis = 0;
@@ -371,8 +270,6 @@ void loop() {
   bool predchoziZamknuti = false;
 
   faze = 1;
-
-  // 3. Hledani polohy
 
   while (true) {
 
@@ -391,33 +288,10 @@ void loop() {
       if (dx < -0.5f) dx = -0.5f;
       if (dx > 0.5f) dx = 0.5f;
 
-      // Cileva poloha podle nakloneni
+      kulicka = mapFloat(dx, -0.5f, 0.5f,
+                         0, POCET_LED - 1);
 
-      float cilovaPoloha = mapFloat(
-        dx,
-        -0.5f,
-        0.5f,
-        0,
-        MAXIMUM_NUM_NEOPIXELS - 1
-      );
-
-      // Plynule dojeti kulicky
-
-      poloha += VYHLAZENI_POL * (cilovaPoloha - poloha);
-
-      poloha = constrain(
-        poloha,
-        0.0f,
-        (float)(MAXIMUM_NUM_NEOPIXELS - 1)
-      );
-
-      kulicka = (int)(poloha + 0.5f);
-
-      kulicka = constrain(
-        kulicka,
-        0,
-        MAXIMUM_NUM_NEOPIXELS - 1
-      );
+      kulicka = constrain(kulicka, 0, POCET_LED - 1);
 
       drziOd = 0;
       predchoziZamknuti = false;
@@ -426,33 +300,22 @@ void loop() {
 
       faze = 2;
 
-      // Zahajeni zamknuti
-
       if (!predchoziZamknuti) {
 
         drziOd = millis();
         predchoziZamknuti = true;
       }
 
-      // Zamknuti musi trvat 1 sekundu
-
-      if (millis() - drziOd >= DOBA_ZAMKNUTI) {
+      if (millis() - drziOd >= 1000) {
         break;
       }
     }
 
-    // Vykresleni kulicky
-
     if (zamyka) {
-
-      vykresliKulicku(poloha, 80, 0, 120);
-
+      svit(kulicka, 80, 0, 120);
     } else {
-
-      vykresliKulicku(poloha, 0, 20, 120);
+      svit(kulicka, 0, 20, 120);
     }
-
-    // Vypis hodnot do serioveho monitoru
 
     if (millis() - vypis > 300) {
 
@@ -471,18 +334,16 @@ void loop() {
     delay(10);
   }
 
-  // 4. Vyhodnoceni vysledku
+  // 3. Vyhodnoceni
 
   int vzdalenost = abs(kulicka - cil);
 
   presnost = 100 -
-      vzdalenost * 100 / (MAXIMUM_NUM_NEOPIXELS - 1);
+      vzdalenost * 100 / (POCET_LED - 1);
 
   presnost = constrain(presnost, 0, 100);
 
   faze = 3;
-
-  Serial.println("--------------------");
 
   Serial.print("Cil: ");
   Serial.println(cil + 1);
@@ -490,29 +351,19 @@ void loop() {
   Serial.print("Tip: ");
   Serial.println(kulicka + 1);
 
-  Serial.print("Vzdalenost: ");
-  Serial.println(vzdalenost);
-
   Serial.print("Presnost: ");
   Serial.print(presnost);
   Serial.println(" %");
-
-  // 5. Zobrazeni vysledku na LED
 
   np.neoPixelClear(false);
 
   np.neoPixelSetValue(cil, 0, 120, 0, false);
 
   if (kulicka != cil) {
-
     np.neoPixelSetValue(kulicka, 120, 0, 0, false);
   }
 
   np.neoPixelShow();
 
-  // Zobrazeni vysledku na webu
-
-  cekej(DOBA_VYSLEDEK);
-
-  Serial.println("Nove kolo");
+  cekej(4000);
 }
